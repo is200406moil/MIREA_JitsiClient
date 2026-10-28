@@ -1,0 +1,9 @@
+TEMPLATE = app
+TARGET = jitsi-gravatar-network-test
+QT = core gui network
+CONFIG += console c++11
+CONFIG -= app_bundle
+PKGCONFIG += auroraapp
+CONFIG += link_pkgconfig
+SOURCES += gravatar-network-test.cpp ../src/appstate.cpp
+HEADERS += ../src/appstate.h

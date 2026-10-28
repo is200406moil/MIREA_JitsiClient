@@ -1,0 +1,13 @@
+.sfdk/
+build/
+RPMS/
+*.o
+*.so
+*.rpm
+Makefile*
+moc_*.cpp
+*.pro.user
+documentation.list
+/ru.vkr.JitsiAuroraPrototype
+/tests/jitsi-*
+*.qm

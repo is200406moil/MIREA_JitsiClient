@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+X-Nemo-Application-Type=silica-qt5
+Icon=ru.vkr.JitsiAuroraPrototype
+Exec=/usr/bin/ru.vkr.JitsiAuroraPrototype
+Name=Jitsi Meet
+Name[ru]=Jitsi Meet
+
+[X-Application]
+Permissions=SecureStorage;Audio;Camera;Internet;Microphone;Pictures;WebView;DeviceInfo;UserDirs
+OrganizationName=ru.vkr
+ApplicationName=JitsiAuroraPrototype
+ExecDBus=/usr/bin/ru.vkr.JitsiAuroraPrototype

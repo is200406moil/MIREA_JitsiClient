@@ -1,0 +1,12 @@
+Jitsi Meet application icon
+
+Source: official jitsi/jitsi-meet repository
+Revision: 28830c6fa563abd0b03f6b392d46ee838286851f
+URL: https://github.com/jitsi/jitsi-meet/blob/28830c6fa563abd0b03f6b392d46ee838286851f/ios/app/src/Images.xcassets/AppIconRelease.appiconset/AppIcon-1024@1x.png
+
+Jitsi.png is the original icon. The launcher PNGs are resized copies.
+The upstream license is included in Jitsi-LICENSE.txt.
+
+The SVG interface icons come from react/features/base/icons/svg/ in the same
+upstream revision. Their original shapes are preserved; Aurora applies the
+interface's foreground color when rendering them.

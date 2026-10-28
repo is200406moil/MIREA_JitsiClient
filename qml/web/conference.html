@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jitsi Meet</title>
+  <style>
+    html, body, #meeting { width: 100%; height: 100%; margin: 0; background: #0b1018; overflow: hidden; }
+    iframe { display: block; border: 0; }
+    #status { box-sizing: border-box; position: absolute; inset: 0; display: flex; align-items: center;
+      justify-content: center; padding: 32px; font: 16px/1.5 sans-serif; text-align: center; color: #a9b9ce; }
+  </style>
+</head>
+<body>
+<div id="status">Подготавливаем встречу…</div>
+<div id="meeting"></div>
+<script>
+'use strict';
+(function () {
+    const config = __MEETING_CONFIG__;
+    const preferences = config.preferences || {};
+    const disabledSounds = [];
+    const soundOptions = {
+        soundReactions: 'REACTION_SOUND', soundMessage: 'INCOMING_MSG_SOUND',
+        soundJoined: 'PARTICIPANT_JOINED_SOUND', soundLeft: 'PARTICIPANT_LEFT_SOUND',
+        soundTalkMuted: 'TALK_WHILE_MUTED_SOUND', soundLobby: 'KNOCKING_PARTICIPANT_SOUND'
+    };
+    Object.keys(soundOptions).forEach(function (key) {
+        if (preferences[key] === false) disabledSounds.push(soundOptions[key]);
+    });
+    let api = null;
+    let participants = new Set();
+    let participantsPaneVisible = false;
+    const status = document.getElementById('status');
+
+    function notify(name, data) {
+        fetch('event', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name, data: data || {} }),
+            credentials: 'omit'
+        }).catch(function () {});
+    }
+    function countParticipants() {
+        notify('participantCount', { count: participants.size });
+    }
+    function checkDevices() {
+        if (!api || typeof api.getAvailableDevices !== 'function') return;
+        api.getAvailableDevices().then(function (devices) {
+            notify('deviceInventory', {
+                audioInput: (devices.audioInput || []).length,
+                videoInput: (devices.videoInput || []).length
+            });
+        }).catch(function () {});
+    }
+    function failed() {
+        status.style.display = 'flex';
+        status.textContent = 'Сервер встречи недоступен. Проверьте адрес сервера и подключение к интернету.';
+        notify('scriptError');
+    }
+    window.auroraMeeting = {
+        command: function (name) {
+            if (!api || !['toggleAudio', 'toggleVideo', 'toggleChat', 'hangup', 'toggleParticipantsPane', 'toggleTileView', 'toggleRaiseHand', 'toggleCamera'].includes(name)) return false;
+            if (name === 'toggleParticipantsPane') {
+                participantsPaneVisible = !participantsPaneVisible;
+                api.executeCommand(name, participantsPaneVisible);
+            } else api.executeCommand(name);
+            return true;
+        },
+        dispose: function () {
+            if (api) { api.dispose(); api = null; }
+        }
+    };
+    const script = document.createElement('script');
+    script.src = config.server + '/external_api.js';
+    script.onerror = failed;
+    script.onload = function () {
+        if (typeof JitsiMeetExternalAPI !== 'function') { failed(); return; }
+        const server = new URL(config.server);
+        const domain = server.host + server.pathname.replace(/\/$/, '');
+        try {
+            api = new JitsiMeetExternalAPI(domain, {
+                roomName: config.room,
+                parentNode: document.getElementById('meeting'),
+                width: '100%',
+                height: '100%',
+                lang: preferences.language || 'ru',
+                userInfo: { displayName: config.displayName, email: config.email, avatarURL: config.avatarURL },
+                configOverwrite: {
+                    disableDeepLinking: true,
+                    prejoinConfig: { enabled: false },
+                    startWithAudioMuted: config.audioMuted,
+                    startWithVideoMuted: config.videoMuted,
+                    disableSelfView: preferences.hideSelfView === true,
+                    disabledSounds: disabledSounds,
+                    disabledNotifications: preferences.chatNotifications === false ? ['notify.chatMessages'] : [],
+                    // Preserve server policy unless the user explicitly disables P2P.
+                    ...(preferences.disableP2p ? { p2p: { enabled: false } } : {}),
+                    analytics: { disabled: true, rtcstatsEnabled: false, watchRTCEnabled: false },
+                    toolbarButtons: [],
+                    disableInviteFunctions: true,
+                    hideConferenceSubject: true,
+                    hideConferenceTimer: true,
+                    doNotStoreRoom: true,
+                    disableShortcuts: true
+                },
+                interfaceConfigOverwrite: {
+                    MOBILE_APP_PROMO: false,
+                    SHOW_JITSI_WATERMARK: false
+                },
+                onload: function () { status.style.display = 'none'; checkDevices(); }
+            });
+            notify('apiReady');
+            ['audioMuteStatusChanged', 'videoMuteStatusChanged', 'passwordRequired',
+             'readyToClose', 'cameraError', 'micError', 'errorOccurred', 'videoAvailabilityChanged'].forEach(function (name) {
+                api.addListener(name, function (data) { notify(name, data); });
+            });
+            api.addListener('videoAvailabilityChanged', checkDevices);
+            api.addListener('audioAvailabilityChanged', checkDevices);
+            api.addListener('videoConferenceJoined', function (data) {
+                if (preferences.lowBandwidth === true) {
+                    try { api.executeCommand('setLowBandwidthMode', true); }
+                    catch (error) { notify('settingUnavailable', {setting:'lowBandwidth'}); }
+                }
+                status.style.display = 'none';
+                participants.add(data.id);
+                notify('videoConferenceJoined', { roomName: data.roomName });
+                countParticipants();
+            });
+            api.addListener('participantJoined', function (data) { participants.add(data.id); countParticipants(); });
+            api.addListener('participantLeft', function (data) { participants.delete(data.id); countParticipants(); });
+            api.addListener('videoConferenceLeft', function () {
+                participants.clear();
+                notify('videoConferenceLeft');
+                countParticipants();
+            });
+        } catch (error) { failed(); }
+    };
+    document.head.appendChild(script);
+    window.addEventListener('pagehide', function () { window.auroraMeeting.dispose(); });
+}());
+</script>
+</body>
+</html>
