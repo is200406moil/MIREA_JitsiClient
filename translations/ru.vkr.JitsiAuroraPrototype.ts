@@ -253,228 +253,235 @@
 <context>
     <name>RoomPage</name>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="79"/>
+        <location filename="../qml/pages/RoomPage.qml" line="80"/>
         <source>Команда не выполнена. Повторите попытку.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="98"/>
+        <location filename="../qml/pages/RoomPage.qml" line="113"/>
         <source>Сервер не ответил. Проверьте соединение и повторите попытку.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="163"/>
+        <location filename="../qml/pages/RoomPage.qml" line="186"/>
         <source>Микрофон недоступен. Проверьте разрешения и подключённые устройства.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="164"/>
+        <location filename="../qml/pages/RoomPage.qml" line="187"/>
         <source>Этот сервер не поддерживает упрощённый режим.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="165"/>
+        <location filename="../qml/pages/RoomPage.qml" line="188"/>
         <source>Введите пароль комнаты в окне встречи.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="166"/>
+        <location filename="../qml/pages/RoomPage.qml" line="189"/>
         <source>Не удалось загрузить встречу с этого сервера. Проверьте его адрес и соединение.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="169"/>
+        <location filename="../qml/pages/RoomPage.qml" line="192"/>
         <source>Ожидаем организатора. Для начала встречи сервер требует вход в учётную запись.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="171"/>
+        <location filename="../qml/pages/RoomPage.qml" line="194"/>
         <source>Не удалось подключиться. Проверьте сообщение в окне встречи.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="200"/>
+        <location filename="../qml/pages/RoomPage.qml" line="224"/>
         <source>Переключить камеру</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="210"/>
-        <location filename="../qml/pages/RoomPage.qml" line="542"/>
+        <location filename="../qml/pages/RoomPage.qml" line="234"/>
+        <location filename="../qml/pages/RoomPage.qml" line="603"/>
         <source>Участники</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="254"/>
+        <location filename="../qml/pages/RoomPage.qml" line="274"/>
+        <source>Интерактивная доска</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/RoomPage.qml" line="306"/>
         <source>Не удалось открыть встречу. Проверьте подключение к интернету.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="269"/>
+        <location filename="../qml/pages/RoomPage.qml" line="321"/>
         <source>Повторить подключение</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="288"/>
+        <location filename="../qml/pages/RoomPage.qml" line="341"/>
         <source>Без звука</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="288"/>
+        <location filename="../qml/pages/RoomPage.qml" line="341"/>
         <source>Микрофон</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="296"/>
+        <location filename="../qml/pages/RoomPage.qml" line="349"/>
         <source>Нет камеры</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="296"/>
+        <location filename="../qml/pages/RoomPage.qml" line="349"/>
         <source>Без видео</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="296"/>
+        <location filename="../qml/pages/RoomPage.qml" line="349"/>
         <source>Камера</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="304"/>
-        <location filename="../qml/pages/RoomPage.qml" line="446"/>
+        <location filename="../qml/pages/RoomPage.qml" line="357"/>
+        <location filename="../qml/pages/RoomPage.qml" line="507"/>
         <source>Чат</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="311"/>
+        <location filename="../qml/pages/RoomPage.qml" line="364"/>
         <source>Ещё</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="318"/>
+        <location filename="../qml/pages/RoomPage.qml" line="371"/>
         <source>Выйти</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="350"/>
+        <location filename="../qml/pages/RoomPage.qml" line="410"/>
         <source>Упрощенный режим</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="351"/>
+        <location filename="../qml/pages/RoomPage.qml" line="411"/>
         <source>Выключить видео (экономичный режим)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="352"/>
+        <location filename="../qml/pages/RoomPage.qml" line="412"/>
         <source>Настройки безопасности</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="353"/>
+        <location filename="../qml/pages/RoomPage.qml" line="413"/>
         <source>Начать трансляцию</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="354"/>
+        <location filename="../qml/pages/RoomPage.qml" line="414"/>
         <source>Показать интерактивную доску</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="355"/>
+        <location filename="../qml/pages/RoomPage.qml" line="415"/>
         <source>Видео YouTube</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="356"/>
+        <location filename="../qml/pages/RoomPage.qml" line="416"/>
         <source>Общий план</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="357"/>
+        <location filename="../qml/pages/RoomPage.qml" line="417"/>
         <source>Начать трансляцию с экрана</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="358"/>
+        <location filename="../qml/pages/RoomPage.qml" line="418"/>
         <source>Статистика</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="359"/>
-        <location filename="../qml/pages/RoomPage.qml" line="620"/>
+        <location filename="../qml/pages/RoomPage.qml" line="419"/>
+        <location filename="../qml/pages/RoomPage.qml" line="681"/>
         <source>Настройки</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="411"/>
+        <location filename="../qml/pages/RoomPage.qml" line="472"/>
         <source>✋ Поднять руку</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="436"/>
-        <location filename="../qml/pages/RoomPage.qml" line="539"/>
-        <location filename="../qml/pages/RoomPage.qml" line="617"/>
+        <location filename="../qml/pages/RoomPage.qml" line="266"/>
+        <location filename="../qml/pages/RoomPage.qml" line="267"/>
+        <location filename="../qml/pages/RoomPage.qml" line="497"/>
+        <location filename="../qml/pages/RoomPage.qml" line="600"/>
+        <location filename="../qml/pages/RoomPage.qml" line="678"/>
         <source>Закрыть</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="446"/>
+        <location filename="../qml/pages/RoomPage.qml" line="507"/>
         <source>Опросы</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="486"/>
+        <location filename="../qml/pages/RoomPage.qml" line="547"/>
         <source>В конференции пока нет никаких сообщений. Начните разговор!</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="498"/>
+        <location filename="../qml/pages/RoomPage.qml" line="559"/>
         <source>Введите здесь ваше сообщение</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="512"/>
+        <location filename="../qml/pages/RoomPage.qml" line="573"/>
         <source>На собрании еще нет опросов. Начать опрос здесь!</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="522"/>
+        <location filename="../qml/pages/RoomPage.qml" line="583"/>
         <source>Создать опрос</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="547"/>
+        <location filename="../qml/pages/RoomPage.qml" line="608"/>
         <source>Список участников (%1)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="42"/>
-        <location filename="../qml/pages/RoomPage.qml" line="554"/>
+        <location filename="../qml/pages/RoomPage.qml" line="43"/>
+        <location filename="../qml/pages/RoomPage.qml" line="615"/>
         <source>Пригласить</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="561"/>
+        <location filename="../qml/pages/RoomPage.qml" line="622"/>
         <source>Поиск участников</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="578"/>
+        <location filename="../qml/pages/RoomPage.qml" line="639"/>
         <source> (вы)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="579"/>
+        <location filename="../qml/pages/RoomPage.qml" line="640"/>
         <source>Модератор</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="593"/>
+        <location filename="../qml/pages/RoomPage.qml" line="654"/>
         <source>Выключить звук у всех</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../qml/pages/RoomPage.qml" line="646"/>
+        <location filename="../qml/pages/RoomPage.qml" line="707"/>
         <source>Вход организатора</source>
         <translation type="unfinished"></translation>
     </message>

@@ -7,6 +7,7 @@
   <style>
     html, body, #meeting { width: 100%; height: 100%; margin: 0; background: #040404; overflow: hidden; }
     iframe { display: block; border: 0; }
+    #meeting.whiteboard iframe { height: calc(100% + 80px) !important; transform: translateY(-80px); }
     #status { box-sizing: border-box; position: absolute; inset: 0; display: flex; align-items: center;
       justify-content: center; padding: 32px; font: 16px/1.5 sans-serif; text-align: center; color: #a9b9ce; }
   </style>
@@ -31,6 +32,8 @@
     let api = null;
     let participants = new Set();
     let participantsPaneVisible = false;
+    let filmstripVisible = true;
+    let filmstripHiddenForWhiteboard = false;
     const status = document.getElementById('status');
 
     function notify(name, data) {
@@ -60,13 +63,40 @@
     }
     window.auroraMeeting = {
         command: function (name) {
-            if (!api || !['toggleAudio', 'toggleVideo', 'toggleChat', 'hangup', 'toggleParticipantsPane', 'toggleTileView', 'toggleRaiseHand', 'toggleCamera', 'setLowBandwidthMode', 'toggleWhiteboard'].includes(name)) return false;
+            if (!api || !['toggleAudio', 'toggleVideo', 'toggleChat', 'hangup', 'toggleParticipantsPane', 'toggleTileView', 'toggleRaiseHand', 'toggleCamera', 'setLowBandwidthMode'].includes(name)) return false;
             if (name === 'toggleParticipantsPane') {
                 participantsPaneVisible = !participantsPaneVisible;
                 api.executeCommand(name, participantsPaneVisible);
             } else if (name === 'setLowBandwidthMode') {
                 api.executeCommand(name, true);
             } else api.executeCommand(name);
+            return true;
+        },
+        openWhiteboard: function () {
+            if (!api) return false;
+            document.getElementById('meeting').classList.add('whiteboard');
+            if (filmstripVisible) {
+                api.executeCommand('toggleFilmStrip');
+                filmstripVisible = false;
+                filmstripHiddenForWhiteboard = true;
+            }
+            api.executeCommand('toggleWhiteboard', true);
+            return true;
+        },
+        closeWhiteboard: function () {
+            if (!api) return false;
+            api.executeCommand('toggleWhiteboard', false);
+            this.restoreFilmstrip();
+            return true;
+        },
+        restoreFilmstrip: function () {
+            if (!api) return false;
+            document.getElementById('meeting').classList.remove('whiteboard');
+            if (filmstripHiddenForWhiteboard) {
+                api.executeCommand('toggleFilmStrip');
+                filmstripVisible = true;
+                filmstripHiddenForWhiteboard = false;
+            }
             return true;
         },
         sendChatMessage: function (message) {
@@ -129,8 +159,11 @@
             });
             notify('apiReady');
             ['audioMuteStatusChanged', 'videoMuteStatusChanged', 'passwordRequired',
-             'readyToClose', 'cameraError', 'micError', 'errorOccurred', 'videoAvailabilityChanged', 'participantRoleChanged'].forEach(function (name) {
+             'readyToClose', 'cameraError', 'micError', 'errorOccurred', 'videoAvailabilityChanged', 'participantRoleChanged', 'whiteboardStatusChanged'].forEach(function (name) {
                 api.addListener(name, function (data) { notify(name, data); });
+            });
+            api.addListener('filmstripDisplayChanged', function (data) {
+                filmstripVisible = !!data.visible;
             });
             api.addListener('videoAvailabilityChanged', checkDevices);
             api.addListener('audioAvailabilityChanged', checkDevices);

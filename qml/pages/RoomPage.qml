@@ -29,6 +29,7 @@ Page {
     property bool chatOpen: false
     property bool participantsOpen: false
     property bool settingsOpen: false
+    property bool whiteboardOpen: false
     property bool audioOnly: false
     property var chatMessages: []
     property var participants: []
@@ -78,12 +79,26 @@ Page {
         webView.runJavaScript("window.auroraMeeting && window.auroraMeeting.command(" + JSON.stringify(name) + ")",
             function(result) {}, function(error) { page.message = qsTr("Команда не выполнена. Повторите попытку.") })
     }
+    function openWhiteboard() {
+        if (!apiReady || whiteboardOpen) return
+        whiteboardOpen = true
+        webView.runJavaScript("window.auroraMeeting && window.auroraMeeting.openWhiteboard()",
+            function(result) { if (!result) page.whiteboardOpen = false },
+            function(error) { page.whiteboardOpen = false })
+    }
+    function closeWhiteboard() {
+        if (!whiteboardOpen) return
+        whiteboardOpen = false
+        webView.runJavaScript("window.auroraMeeting && window.auroraMeeting.closeWhiteboard()",
+            function(result) {}, function(error) {})
+    }
     function closeMeeting() {
         if (leaving) return
         leaving = true
         moreOpen = false
         chatOpen = false
         participantsOpen = false
+        whiteboardOpen = false
         closePopup()
         if (apiReady) command("hangup")
         closeTimer.start()
@@ -129,6 +144,14 @@ Page {
             case "apiReady": page.apiReady = true; break
             case "videoConferenceJoined": page.joined = true; page.participantCount = 1; page.selfId = data.id || ""; page.message = ""; break
             case "videoConferenceLeft": page.joined = false; page.participantCount = 0; page.participants = []; break
+            case "whiteboardStatusChanged":
+                if (data.status === "SHOWN") page.openWhiteboard()
+                else if (data.status === "FORBIDDEN" || data.status === "HIDDEN" || data.status === "RESET") {
+                    page.whiteboardOpen = false
+                    webView.runJavaScript("window.auroraMeeting && window.auroraMeeting.restoreFilmstrip()",
+                        function(result) {}, function(error) {})
+                }
+                break
             case "participantCount": page.participantCount = data.count; break
             case "participantJoined":
                 var people = page.participants.slice()
@@ -176,6 +199,7 @@ Page {
     }
     Column {
         id: topPanel
+        visible: !page.whiteboardOpen
         width: parent.width
         Rectangle {
             width: parent.width
@@ -231,9 +255,37 @@ Page {
             }
         }
     }
+    Rectangle {
+        id: whiteboardHeader
+        anchors { top: parent.top; left: parent.left; right: parent.right }
+        visible: page.whiteboardOpen
+        height: visible ? 90 : 0
+        color: AppStyle.background
+        BackgroundItem {
+            x: 30; width: 150; height: parent.height
+            Accessible.name: qsTr("Закрыть")
+            Label { anchors.centerIn: parent; text: qsTr("Закрыть"); color: AppStyle.accent; font.pixelSize: 30 }
+            onClicked: page.closeWhiteboard()
+        }
+        Label {
+            x: 96
+            width: parent.width - x - 8
+            anchors.verticalCenter: parent.verticalCenter
+            text: qsTr("Интерактивная доска")
+            color: AppStyle.text
+            font.pixelSize: 32
+            font.bold: true
+            horizontalAlignment: Text.AlignHCenter
+        }
+    }
     WebView {
         id: webView
-        anchors { top: topPanel.bottom; bottom: callBar.top; left: parent.left; right: parent.right }
+        anchors {
+            top: page.whiteboardOpen ? whiteboardHeader.bottom : topPanel.bottom
+            bottom: page.whiteboardOpen ? whiteboardFooter.top : callBar.top
+            left: parent.left
+            right: parent.right
+        }
         url: appState.meetingUrl
         userAgent: "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
         TouchInput { enabled: true }
@@ -276,6 +328,7 @@ Page {
     }
     Rectangle {
         id: callBar
+        visible: !page.whiteboardOpen
         anchors { bottom: parent.bottom; left: parent.left; right: parent.right }
         height: 80
         color: AppStyle.background
@@ -322,6 +375,13 @@ Page {
                 onClicked: page.closeMeeting()
             }
         }
+    }
+    Rectangle {
+        id: whiteboardFooter
+        anchors { bottom: parent.bottom; left: parent.left; right: parent.right }
+        visible: page.whiteboardOpen
+        height: visible ? 54 : 0
+        color: AppStyle.background
     }
     Rectangle {
         anchors.fill: parent
@@ -381,6 +441,7 @@ Page {
                         onClicked: {
                             page.moreOpen = false
                             if (modelData.command === "settings") page.settingsOpen = true
+                            else if (modelData.command === "toggleWhiteboard") page.openWhiteboard()
                             else if (modelData.command === "audioOnly") {
                                 page.audioOnly = !page.audioOnly
                                 webView.runJavaScript("window.auroraMeeting && window.auroraMeeting.setAudioOnly(" + page.audioOnly + ")",

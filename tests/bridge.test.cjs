@@ -8,6 +8,8 @@ const config = { server: 'https://meet.example.org', room: 'Team meeting', displ
 const source = html.match(/<script>([\s\S]*?)<\/script>/)[1].replace('__MEETING_CONFIG__', JSON.stringify(config));
 const events = [], commands = [], commandArguments = [], listeners = {};
 const status = { style: {}, textContent: '' };
+const meetingClasses = new Set();
+const meeting = { classList: { add: value => meetingClasses.add(value), remove: value => meetingClasses.delete(value) } };
 let script, options, disposed = false;
 function API(domain, opts) {
     assert.equal(domain, 'meet.example.org');
@@ -20,7 +22,7 @@ function API(domain, opts) {
 const context = {
     URL, Set, console, JitsiMeetExternalAPI: API,
     fetch: (_, request) => { events.push(JSON.parse(request.body)); return Promise.resolve(); },
-    document: { getElementById: id => id === 'status' ? status : {}, createElement: () => ({}), head: { appendChild: el => { script = el; } } },
+    document: { getElementById: id => id === 'status' ? status : meeting, createElement: () => ({}), head: { appendChild: el => { script = el; } } },
     window: { addEventListener: (name, callback) => { if (name === 'pagehide') context.onHide = callback; } }
 };
 vm.runInNewContext(source, context);
@@ -64,6 +66,21 @@ assert.equal(context.window.auroraMeeting.command('toggleParticipantsPane'), tru
 assert.deepEqual(commandArguments.at(-1), [true]);
 assert.equal(context.window.auroraMeeting.command('toggleParticipantsPane'), true);
 assert.deepEqual(commandArguments.at(-1), [false]);
+assert.equal(context.window.auroraMeeting.openWhiteboard(), true);
+assert.equal(meetingClasses.has('whiteboard'), true);
+assert.deepEqual(commands.slice(-2), ['toggleFilmStrip', 'toggleWhiteboard']);
+assert.deepEqual(commandArguments.at(-1), [true]);
+listeners.whiteboardStatusChanged({ status: 'SHOWN' });
+assert.equal(events.at(-1).name, 'whiteboardStatusChanged');
+assert.equal(context.window.auroraMeeting.closeWhiteboard(), true);
+assert.equal(meetingClasses.has('whiteboard'), false);
+assert.deepEqual(commands.slice(-2), ['toggleWhiteboard', 'toggleFilmStrip']);
+assert.deepEqual(commandArguments.at(-2), [false]);
+listeners.filmstripDisplayChanged({ visible: false });
+assert.equal(context.window.auroraMeeting.openWhiteboard(), true);
+assert.equal(commands.at(-1), 'toggleWhiteboard', 'already hidden filmstrip stays hidden');
+assert.equal(context.window.auroraMeeting.closeWhiteboard(), true);
+assert.equal(commands.at(-1), 'toggleWhiteboard', 'user-hidden filmstrip stays hidden after closing');
 listeners.videoConferenceLeft();
 assert.equal(events.at(-1).data.count, 0);
 context.onHide();
