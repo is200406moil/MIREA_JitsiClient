@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Jitsi Meet</title>
   <style>
-    html, body, #meeting { width: 100%; height: 100%; margin: 0; background: #0b1018; overflow: hidden; }
+    html, body, #meeting { width: 100%; height: 100%; margin: 0; background: #040404; overflow: hidden; }
     iframe { display: block; border: 0; }
     #status { box-sizing: border-box; position: absolute; inset: 0; display: flex; align-items: center;
       justify-content: center; padding: 32px; font: 16px/1.5 sans-serif; text-align: center; color: #a9b9ce; }
@@ -60,11 +60,28 @@
     }
     window.auroraMeeting = {
         command: function (name) {
-            if (!api || !['toggleAudio', 'toggleVideo', 'toggleChat', 'hangup', 'toggleParticipantsPane', 'toggleTileView', 'toggleRaiseHand', 'toggleCamera'].includes(name)) return false;
+            if (!api || !['toggleAudio', 'toggleVideo', 'toggleChat', 'hangup', 'toggleParticipantsPane', 'toggleTileView', 'toggleRaiseHand', 'toggleCamera', 'setLowBandwidthMode', 'toggleWhiteboard'].includes(name)) return false;
             if (name === 'toggleParticipantsPane') {
                 participantsPaneVisible = !participantsPaneVisible;
                 api.executeCommand(name, participantsPaneVisible);
+            } else if (name === 'setLowBandwidthMode') {
+                api.executeCommand(name, true);
             } else api.executeCommand(name);
+            return true;
+        },
+        sendChatMessage: function (message) {
+            if (!api || !message || !message.trim()) return false;
+            api.executeCommand('sendChatMessage', message.trim());
+            return true;
+        },
+        muteEveryone: function (mediaType) {
+            if (!api) return false;
+            api.executeCommand('muteEveryone', mediaType === 'video' ? 'video' : 'audio');
+            return true;
+        },
+        setAudioOnly: function (enabled) {
+            if (!api) return false;
+            api.executeCommand('setAudioOnly', !!enabled);
             return true;
         },
         dispose: function () {
@@ -112,7 +129,7 @@
             });
             notify('apiReady');
             ['audioMuteStatusChanged', 'videoMuteStatusChanged', 'passwordRequired',
-             'readyToClose', 'cameraError', 'micError', 'errorOccurred', 'videoAvailabilityChanged'].forEach(function (name) {
+             'readyToClose', 'cameraError', 'micError', 'errorOccurred', 'videoAvailabilityChanged', 'participantRoleChanged'].forEach(function (name) {
                 api.addListener(name, function (data) { notify(name, data); });
             });
             api.addListener('videoAvailabilityChanged', checkDevices);
@@ -124,11 +141,13 @@
                 }
                 status.style.display = 'none';
                 participants.add(data.id);
-                notify('videoConferenceJoined', { roomName: data.roomName });
+                notify('videoConferenceJoined', { roomName: data.roomName, id: data.id });
                 countParticipants();
             });
-            api.addListener('participantJoined', function (data) { participants.add(data.id); countParticipants(); });
-            api.addListener('participantLeft', function (data) { participants.delete(data.id); countParticipants(); });
+            api.addListener('participantJoined', function (data) { participants.add(data.id); countParticipants(); notify('participantJoined', data); });
+            api.addListener('participantLeft', function (data) { participants.delete(data.id); countParticipants(); notify('participantLeft', data); });
+            api.addListener('incomingMessage', function (data) { notify('incomingMessage', data); });
+            api.addListener('outgoingMessage', function (data) { notify('outgoingMessage', data); });
             api.addListener('videoConferenceLeft', function () {
                 participants.clear();
                 notify('videoConferenceLeft');

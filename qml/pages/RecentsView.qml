@@ -21,66 +21,74 @@ SilicaFlickable {
                 Rectangle {
                     visible: index === 0 || appState.roomSection(entry.room.lastUsed) !== appState.roomSection(view.rooms[index-1].lastUsed)
                     width: parent.width
-                    height: visible ? Theme.itemSizeSmall / 2 : 0
-                    color: Theme.rgba(Theme.primaryColor, 0.12)
+                    height: visible ? 28 : 0
+                    color: AppStyle.field
                     Label {
-                        x: Theme.horizontalPageMargin
+                        x: 16
                         anchors.verticalCenter: parent.verticalCenter
                         text: appState.roomSection(entry.room.lastUsed)
-                        color: Theme.secondaryColor
-                        font.pixelSize: Theme.fontSizeExtraSmall
+                        color: AppStyle.muted
+                        font.pixelSize: 14
                     }
                 }
                 ListItem {
                     id: row
                     width: parent.width
-                    contentHeight: Math.max(Theme.itemSizeExtraLarge, roomText.height + 2 * Theme.paddingMedium)
+                    contentHeight: Math.max(81, roomText.height + 16)
                     onClicked: view.openRoom(entry.room)
                     menu: ContextMenu {
                         MenuItem {
                             text: qsTr("Удалить")
                             onClicked: row.remorseAction(qsTr("Удаление комнаты"), function() { appState.removeRoom(entry.room.id) })
                         }
+                        MenuItem {
+                            text: qsTr("Инфо")
+                            onClicked: pageStack.push(Qt.resolvedUrl("DialInInfoPage.qml"), {room: entry.room})
+                        }
                     }
                     Rectangle {
                         id: initials
-                        x: Theme.horizontalPageMargin
+                        x: 16
                         anchors.verticalCenter: parent.verticalCenter
-                        width: Theme.itemSizeMedium
+                        width: 65
                         height: width
                         radius: width/2
-                        color: Theme.rgba(Theme.highlightColor, 0.25)
+                        color: AppStyle.avatarColor(entry.room.server === "https://meet.jit.si" ? entry.room.name : entry.room.server)
                         Label {
                             anchors.centerIn: parent
                             text: appState.initials(entry.room.name)
-                            font.pixelSize: Theme.fontSizeExtraLarge
+                            color: AppStyle.text
+                            font.pixelSize: 29
+                            font.weight: Font.Light
                         }
                     }
                     Column {
                         id: roomText
-                        x: initials.x + initials.width + Theme.paddingLarge
-                        width: parent.width - x - Theme.horizontalPageMargin
+                        x: initials.x + initials.width + 5
+                        width: parent.width - x - 16
                         anchors.verticalCenter: parent.verticalCenter
-                        spacing: Theme.paddingSmall
+                        spacing: 2
                         Label {
                             width: parent.width
                             text: entry.room.name
                             font.bold: true
+                            font.pixelSize: 16
+                            color: AppStyle.muted
                             truncationMode: TruncationMode.Fade
                         }
                         Label {
                             width: parent.width
                             text: appState.roomDate(entry.room.lastUsed)
-                            color: Theme.secondaryColor
-                            font.pixelSize: Theme.fontSizeSmall
+                            color: AppStyle.muted
+                            font.pixelSize: 14
                             truncationMode: TruncationMode.Fade
                         }
                         Label {
                             width: parent.width
                             text: entry.room.server.replace("https://", "")
                             visible: entry.room.server !== "https://meet.jit.si"
-                            color: Theme.secondaryColor
-                            font.pixelSize: Theme.fontSizeSmall
+                            color: AppStyle.muted
+                            font.pixelSize: 14
                             truncationMode: TruncationMode.Fade
                         }
                     }

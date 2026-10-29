@@ -4,21 +4,21 @@ import Sailfish.Silica 1.0
 Item {
     property alias text: heading.text
     width: parent.width
-    height: heading.height + 3 * Theme.paddingLarge
+    height: heading.height + 36
     Rectangle {
-        x: Theme.horizontalPageMargin
-        y: Theme.paddingSmall
+        x: 16
+        y: 0
         width: parent.width - 2 * x
         height: 1
-        color: Theme.rgba(Theme.primaryColor, 0.2)
+        color: AppStyle.border
     }
     Label {
         id: heading
-        x: Theme.horizontalPageMargin
-        y: parent.height - height - Theme.paddingSmall
+        x: 16
+        y: parent.height - height - 8
         width: parent.width - 2*x
-        color: Theme.secondaryColor
-        font.pixelSize: Theme.fontSizeSmall
+        color: AppStyle.muted
+        font.pixelSize: 14
         wrapMode: Text.Wrap
     }
 }

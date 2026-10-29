@@ -1,16 +1,21 @@
 #include "appstate.h"
 
 #include <QCryptographicHash>
+#include <QClipboard>
 #include <QDateTime>
 #include <QFile>
+#include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocale>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QRegularExpression>
 #include <QTcpSocket>
 #include <QTimer>
 #include <QUrl>
+#include <QUrlQuery>
 #include <QUuid>
 #include <auroraapp.h>
 #include <algorithm>
@@ -65,7 +70,7 @@ bool AppState::setPreference(const QString &key, const QVariant &value)
 
 QString AppState::roomSection(qint64 timestamp) const
 {
-    if (!timestamp) return tr("Сохранённые");
+    if (!timestamp) return tr("Ранее");
     const QDate date = QDateTime::fromMSecsSinceEpoch(timestamp).date();
     if (date == QDate::currentDate()) return tr("Сегодня");
     if (date == QDate::currentDate().addDays(-1)) return tr("Вчера");
@@ -77,6 +82,105 @@ QString AppState::avatarUrl() const
     if (email().isEmpty()) return QString();
     const QByteArray hash = QCryptographicHash::hash(email().trimmed().toLower().toUtf8(), QCryptographicHash::Sha256).toHex();
     return "https://www.gravatar.com/avatar/" + QString::fromLatin1(hash) + "?s=256&d=404&r=g";
+}
+
+void AppState::copyText(const QString &text)
+{
+    QGuiApplication::clipboard()->setText(text);
+}
+
+void AppState::fetchDialInInfo(const QVariantMap &room)
+{
+    const int requestId = ++m_dialInRequestId;
+    const QString roomName = room.value("name").toString();
+    const QString serverAddress = normalizedServer(room.value("server").toString());
+    m_dialInInfo = {{"room", roomName}, {"loading", true}, {"numbers", QVariantList()}};
+    emit dialInInfoChanged();
+    if (roomName.isEmpty() || serverAddress.isEmpty()) {
+        m_dialInInfo["loading"] = false;
+        emit dialInInfoChanged();
+        return;
+    }
+    if (serverAddress == QStringLiteral("https://meet.jit.si")) {
+        requestDialInEndpoints(roomName, serverAddress,
+            QStringLiteral("https://api.jitsi.net/phoneNumberList"),
+            QStringLiteral("https://api.jitsi.net/conferenceMapper"), requestId);
+        return;
+    }
+    QNetworkReply *configReply = m_network.get(QNetworkRequest(QUrl(serverAddress + "/config.js")));
+    connect(configReply, &QNetworkReply::finished, this, [this, configReply, roomName, serverAddress, requestId]() {
+        const QString config = QString::fromUtf8(configReply->readAll());
+        const bool ok = configReply->error() == QNetworkReply::NoError;
+        configReply->deleteLater();
+        if (requestId != m_dialInRequestId) return;
+        const QRegularExpression numbersPattern("dialInNumbersUrl\\s*:\\s*['\"](https://[^'\"]+)['\"]");
+        const QRegularExpression codePattern("dialInConfCodeUrl\\s*:\\s*['\"](https://[^'\"]+)['\"]");
+        const auto numbers = numbersPattern.match(config);
+        const auto code = codePattern.match(config);
+        if (!ok || !numbers.hasMatch() || !code.hasMatch()) {
+            m_dialInInfo["loading"] = false;
+            emit dialInInfoChanged();
+            return;
+        }
+        requestDialInEndpoints(roomName, serverAddress, numbers.captured(1), code.captured(1), requestId);
+    });
+}
+
+void AppState::requestDialInEndpoints(const QString &roomName, const QString &serverAddress,
+                                      const QString &numbersUrl, const QString &codeUrl, int requestId)
+{
+    const QString host = QUrl(serverAddress).host();
+    const QString conference = roomName + "@conference." + host;
+    m_dialInPending = 2;
+    auto complete = [this, requestId]() {
+        if (requestId != m_dialInRequestId) return;
+        if (--m_dialInPending == 0) {
+            m_dialInInfo["loading"] = false;
+            emit dialInInfoChanged();
+        }
+    };
+    QUrl numberEndpoint(numbersUrl);
+    QUrlQuery numberQuery(numberEndpoint);
+    numberQuery.addQueryItem("conference", conference);
+    numberEndpoint.setQuery(numberQuery);
+    QNetworkReply *numbersReply = m_network.get(QNetworkRequest(numberEndpoint));
+    connect(numbersReply, &QNetworkReply::finished, this, [this, numbersReply, requestId, complete]() {
+        const QByteArray body = numbersReply->readAll();
+        const bool ok = numbersReply->error() == QNetworkReply::NoError;
+        numbersReply->deleteLater();
+        if (requestId != m_dialInRequestId) return;
+        if (ok) {
+            const QJsonObject response = QJsonDocument::fromJson(body).object();
+            QVariantList rows;
+            const QJsonObject countries = response.value("numbers").toObject();
+            QStringList order = {"US", "UK", "France", "Netherlands", "Spain", "Canada", "Australia", "Brazil"};
+            for (const QString &country : countries.keys()) if (!order.contains(country)) order.append(country);
+            for (const QString &country : order) {
+                for (const QJsonValue &number : countries.value(country).toArray())
+                    rows.append(QVariantMap{{"country", country}, {"number", number.toString()}});
+            }
+            if (response.value("numbersEnabled").toBool()) m_dialInInfo["numbers"] = rows;
+        }
+        complete();
+    });
+    QUrl codeEndpoint(codeUrl);
+    QUrlQuery codeQuery(codeEndpoint);
+    codeQuery.addQueryItem("conference", conference);
+    codeQuery.addQueryItem("url", serverAddress + "/" + QString::fromLatin1(QUrl::toPercentEncoding(roomName)));
+    codeEndpoint.setQuery(codeQuery);
+    QNetworkReply *codeReply = m_network.get(QNetworkRequest(codeEndpoint));
+    connect(codeReply, &QNetworkReply::finished, this, [this, codeReply, requestId, complete]() {
+        const QByteArray body = codeReply->readAll();
+        const bool ok = codeReply->error() == QNetworkReply::NoError;
+        codeReply->deleteLater();
+        if (requestId != m_dialInRequestId) return;
+        if (ok) {
+            const QJsonValue id = QJsonDocument::fromJson(body).object().value("id");
+            if (id.isString()) m_dialInInfo["pin"] = id.toString();
+            else if (id.isDouble()) m_dialInInfo["pin"] = QString::number(qint64(id.toDouble()));
+        }
+        complete();
+    });
 }
 
 QVariantList AppState::rooms() const
@@ -216,9 +320,31 @@ QString AppState::initials(const QString &name) const
 
 QString AppState::roomDate(qint64 timestamp) const
 {
-    if (!timestamp) return tr("Сохранённая комната");
+    if (!timestamp) return QString();
     const QDateTime time = QDateTime::fromMSecsSinceEpoch(timestamp);
-    if (time.date() == QDate::currentDate()) return tr("Сегодня, ") + time.toString("HH:mm");
+    if (time.date() == QDate::currentDate()) {
+        const qint64 seconds = qMax<qint64>(0, time.secsTo(QDateTime::currentDateTime()));
+        const bool english = preferences().value("language") == "en";
+        if (seconds < 45) return english ? QStringLiteral("a few seconds ago") : QStringLiteral("несколько секунд назад");
+        if (seconds < 90) return english ? QStringLiteral("a minute ago") : QStringLiteral("минуту назад");
+        const int minutes = int(seconds / 60);
+        if (minutes < 45) {
+            if (english) return QStringLiteral("%1 minutes ago").arg(minutes);
+            const int last = minutes % 10;
+            const QString suffix = minutes % 100 >= 11 && minutes % 100 <= 14 ? QStringLiteral("минут")
+                : last == 1 ? QStringLiteral("минуту") : last >= 2 && last <= 4 ? QStringLiteral("минуты") : QStringLiteral("минут");
+            return QStringLiteral("%1 %2 назад").arg(minutes).arg(suffix);
+        }
+        if (seconds < 90 * 60) return english ? QStringLiteral("an hour ago") : QStringLiteral("час назад");
+        const int hours = int(seconds / 3600);
+        if (hours < 22) {
+            if (english) return QStringLiteral("%1 hours ago").arg(hours);
+            const int last = hours % 10;
+            const QString suffix = hours % 100 >= 11 && hours % 100 <= 14 ? QStringLiteral("часов")
+                : last == 1 ? QStringLiteral("час") : last >= 2 && last <= 4 ? QStringLiteral("часа") : QStringLiteral("часов");
+            return QStringLiteral("%1 %2 назад").arg(hours).arg(suffix);
+        }
+    }
     if (time.date() == QDate::currentDate().addDays(-1)) return tr("Вчера, ") + time.toString("HH:mm");
     return QLocale(preferences().value("language") == "en" ? QLocale::English : QLocale::Russian).toString(time, "d MMMM, HH:mm");
 }

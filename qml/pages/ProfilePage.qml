@@ -7,6 +7,13 @@ Page {
     allowedOrientations: Orientation.All
     property var mainPage
     property string error
+    Rectangle { anchors.fill: parent; color: AppStyle.surface }
+    Item {
+    id: viewport
+    width: page.width / 2
+    height: page.height / 2
+    scale: 2
+    transformOrigin: Item.TopLeft
     BottomNavigation {
         id: navigation
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
@@ -16,10 +23,10 @@ Page {
             pageStack.pop()
         }
     }
-    Button {
+    AppButton {
         id: applyButton
-        anchors { horizontalCenter: parent.horizontalCenter; bottom: navigation.top; bottomMargin: Theme.paddingMedium }
-        preferredWidth: parent.width - 2*Theme.horizontalPageMargin
+        anchors { horizontalCenter: parent.horizontalCenter; bottom: navigation.top; bottomMargin: 16 }
+        width: parent.width - 32
         text: qsTr("Применить")
         onClicked: {
             if (appState.saveProfile(nameField.text, emailField.text)) pageStack.pop()
@@ -28,51 +35,55 @@ Page {
     }
     SilicaFlickable {
         anchors { left: parent.left; right: parent.right; top: parent.top; bottom: applyButton.top }
-        contentHeight: body.height + Theme.paddingLarge
+        contentHeight: body.height + 16
         Column {
             id: body
             width: parent.width
             ScreenHeader { title: qsTr("Профиль"); showBack: true; onBackClicked: pageStack.pop() }
-            Item { width: 1; height: Theme.paddingLarge }
+            Item { width: 1; height: 16 }
             Avatar {
                 anchors.horizontalCenter: parent.horizontalCenter
-                width: Theme.itemSizeExtraLarge
+                width: 64
                 name: nameField.text
                 imageUrl: appState.avatarUrl
             }
-            Item { width: 1; height: Theme.itemSizeSmall }
+            Item { width: 1; height: 40 }
             Label {
-                x: Theme.horizontalPageMargin; width: parent.width-2*x
+                x: 16; width: parent.width-32
                 text: qsTr("Отображаемое имя")
+                color: AppStyle.text; font.pixelSize: 16
             }
-            TextField {
-                id: nameField; width: parent.width
+            Item { width: 1; height: 8 }
+            JitsiField {
+                id: nameField; x: 16; width: parent.width-32
                 text: appState.displayName; placeholderText: qsTr("Отображаемое имя")
-                EnterKey.iconSource: "image://theme/icon-m-enter-next"
-                EnterKey.onClicked: emailField.focus = true
+                onAccepted: emailField.focusEditor()
             }
-            Item { width: 1; height: Theme.paddingLarge }
+            Item { width: 1; height: 24 }
             Label {
-                x: Theme.horizontalPageMargin; width: parent.width-2*x
+                x: 16; width: parent.width-32
                 text: "Email"
+                color: AppStyle.text; font.pixelSize: 16
             }
-            TextField {
-                id: emailField; width: parent.width
+            Item { width: 1; height: 8 }
+            JitsiField {
+                id: emailField; x: 16; width: parent.width-32
                 text: appState.email; placeholderText: "email@example.com"
                 inputMethodHints: Qt.ImhEmailCharactersOnly | Qt.ImhNoAutoUppercase
             }
-            Item { width: 1; height: Theme.paddingSmall }
+            Item { width: 1; height: 8 }
             Label {
-                x: Theme.horizontalPageMargin; width: parent.width-2*x
+                x: 16; width: parent.width-32
                 text: qsTr("Если ваш email связан с аккаунтом Gravatar, мы будем использовать его в качестве изображения вашего профиля.")
-                color: Theme.secondaryColor; font.pixelSize: Theme.fontSizeSmall; wrapMode: Text.Wrap
+                color: AppStyle.muted; font.pixelSize: 14; wrapMode: Text.Wrap
             }
             Label {
-                x: Theme.horizontalPageMargin; width: parent.width-2*x
+                x: 16; width: parent.width-32
                 visible: page.error.length > 0
-                text: page.error; color: Theme.highlightColor; wrapMode: Text.Wrap
+                text: page.error; color: AppStyle.danger; wrapMode: Text.Wrap
             }
         }
         VerticalScrollDecorator {}
+    }
     }
 }

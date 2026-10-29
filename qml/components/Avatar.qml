@@ -11,13 +11,14 @@ Rectangle {
     width: Theme.itemSizeLarge
     height: width
     radius: width / 2
-    color: AppStyle.raised
+    color: AppStyle.avatarColor(avatar.name)
     clip: true
     Label {
         anchors.centerIn: parent
         text: appState.initials(avatar.name)
-        color: AppStyle.accentLight
-        font.pixelSize: avatar.width * 0.32
+        color: AppStyle.text
+        font.pixelSize: avatar.width * 0.45
+        font.weight: Font.Light
         visible: photo.status !== Image.Ready
     }
     Image {

@@ -14,6 +14,7 @@ Page {
     property bool previewAllowed: true
     property bool previewUnavailable: false
     property bool requestedVideoOff: false
+    Rectangle { anchors.fill: parent; color: AppStyle.background }
     function resetPreview() {
         page.joining = false
         page.previewUnavailable = false
@@ -48,34 +49,40 @@ Page {
         })
         }
     }
+    Item {
+    id: viewport
+    width: page.width / 2
+    height: page.height / 2
+    scale: 2
+    transformOrigin: Item.TopLeft
     SilicaFlickable {
         anchors.fill: parent
-        contentHeight: body.height + Theme.paddingLarge
+        contentHeight: body.height + 16
         Column {
             id: body
             width: parent.width
-            spacing: Theme.paddingLarge
-            ScreenHeader {
-                title: qsTr("Присоединиться к встрече")
-                showBack: true
-                onBackClicked: pageStack.pop()
+            spacing: 16
+            Item {
+                width: parent.width; height: 56
+                Rectangle { anchors.fill: parent; color: AppStyle.surface }
+                BackgroundItem {
+                    width: 72; height: parent.height
+                    Label { anchors.centerIn: parent; text: qsTr("Закрыть"); color: AppStyle.accent; font.pixelSize: 16 }
+                    onClicked: pageStack.pop()
+                }
+                Label {
+                    anchors.centerIn: parent
+                    text: qsTr("Присоединиться к встрече")
+                    color: AppStyle.text; font.pixelSize: 16
+                }
             }
             Rectangle {
                 width: parent.width
-                height: page.isLandscape ? Theme.itemSizeExtraLarge*1.5 : Theme.itemSizeExtraLarge*2.5
-                color: Theme.rgba(Theme.primaryColor, 0.05)
-                Label {
-                    x: Theme.horizontalPageMargin
-                    y: Theme.paddingMedium
-                    width: parent.width-2*x
-                    text: page.room.name
-                    horizontalAlignment: Text.AlignHCenter
-                    wrapMode: Text.Wrap
-                    font.pixelSize: Theme.fontSizeLarge
-                }
+                height: page.isLandscape ? viewport.height * 0.35 : Math.min(viewport.width * 0.95, viewport.height * 0.47)
+                color: AppStyle.surface
                 Avatar {
                     anchors.centerIn: parent
-                    width: Theme.itemSizeExtraLarge
+                    width: 80
                     name: nameField.text
                     imageUrl: appState.avatarUrl
                 }
@@ -86,27 +93,44 @@ Page {
                     source: Qt.resolvedUrl("../components/CameraPreview.qml")
                     onLoaded: item.unavailable.connect(function() { page.previewUnavailable = true })
                 }
+                Rectangle {
+                    anchors { top: parent.top; topMargin: 16; horizontalCenter: parent.horizontalCenter }
+                    width: Math.min(parent.width - 32, roomCaption.implicitWidth + 24)
+                    height: 38
+                    radius: 6
+                    color: "#AA000000"
+                    Label {
+                        id: roomCaption
+                        anchors.centerIn: parent
+                        width: parent.width - 24
+                        text: page.room.name
+                        color: AppStyle.text
+                        font.pixelSize: 18
+                        horizontalAlignment: Text.AlignHCenter
+                        truncationMode: TruncationMode.Fade
+                    }
+                }
             }
             Row {
                 anchors.horizontalCenter: parent.horizontalCenter
-                spacing: Theme.paddingLarge
+                spacing: 8
                 IconButton {
-                    width: Theme.itemSizeMedium
+                    width: 56
                     height: width
-                    icon.width: Theme.iconSizeMedium
-                    icon.height: Theme.iconSizeMedium
+                    icon.width: 24
+                    icon.height: 24
                     icon.source: Qt.resolvedUrl("../icons/" + (page.muteAudio ? "mic-slash" : "mic") + ".svg")
-                    icon.color: page.muteAudio ? Theme.secondaryColor : Theme.highlightColor
+                    icon.color: page.muteAudio ? AppStyle.inactive : AppStyle.text
                     Accessible.name: page.muteAudio ? qsTr("Включить микрофон") : qsTr("Выключить микрофон")
                     onClicked: page.muteAudio = !page.muteAudio
                 }
                 IconButton {
-                    width: Theme.itemSizeMedium
+                    width: 56
                     height: width
-                    icon.width: Theme.iconSizeMedium
-                    icon.height: Theme.iconSizeMedium
+                    icon.width: 24
+                    icon.height: 24
                     icon.source: Qt.resolvedUrl("../icons/" + (page.muteVideo ? "video-off" : "video") + ".svg")
-                    icon.color: page.muteVideo ? Theme.secondaryColor : Theme.highlightColor
+                    icon.color: page.muteVideo ? AppStyle.inactive : AppStyle.text
                     Accessible.name: page.muteVideo ? qsTr("Включить камеру") : qsTr("Выключить камеру")
                     onClicked: {
                         page.muteVideo = !page.muteVideo
@@ -114,41 +138,42 @@ Page {
                     }
                 }
             }
-            TextField {
+            JitsiField {
                 id: nameField
-                width: parent.width
+                x: 16
+                width: parent.width - 32
                 text: appState.displayName
-                label: qsTr("Ваше имя")
                 placeholderText: qsTr("Пожалуйста, введите своё имя")
-                EnterKey.iconSource: "image://theme/icon-m-enter-accept"
-                EnterKey.onClicked: page.join(false)
+                centered: true
+                onAccepted: page.join(false)
             }
             Label {
-                x: Theme.horizontalPageMargin; width: parent.width-2*x
+                x: 16; width: parent.width-32
                 text: page.formError; visible: text.length > 0
-                color: Theme.highlightColor; wrapMode: Text.Wrap; font.pixelSize: Theme.fontSizeSmall
+                color: AppStyle.danger; wrapMode: Text.Wrap; font.pixelSize: 14
             }
-            Button {
-                anchors.horizontalCenter: parent.horizontalCenter
-                preferredWidth: parent.width - 2*Theme.horizontalPageMargin
+            AppButton {
+                x: 16
+                width: parent.width - 32
                 text: qsTr("Присоединиться к встрече")
                 enabled: nameField.text.trim().length > 0
                 onClicked: page.join(false)
             }
             BackgroundItem {
                 width: parent.width
-                height: Theme.itemSizeMedium
+                height: 48
                 enabled: nameField.text.trim().length > 0
                 Accessible.name: qsTr("Присоединиться без видео")
                 Label {
                     anchors.centerIn: parent
                     text: qsTr("Присоединиться без видео")
-                    color: Theme.highlightColor
-                    font.pixelSize: Theme.fontSizeSmall
+                    color: AppStyle.text
+                    font.pixelSize: 16
                 }
                 onClicked: page.join(true)
             }
         }
         VerticalScrollDecorator {}
+    }
     }
 }

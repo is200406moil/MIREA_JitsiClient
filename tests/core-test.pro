@@ -1,6 +1,6 @@
 TEMPLATE = app
 TARGET = jitsi-core-test
-QT = core network
+QT = core gui network
 CONFIG += console c++11
 CONFIG -= app_bundle
 PKGCONFIG += auroraapp

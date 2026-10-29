@@ -10,7 +10,7 @@ BackgroundItem {
     property bool checked: locked || appState.preferences[preferenceKey] === true
 
     width: parent.width
-    height: Math.max(Theme.itemSizeMedium, labels.height + 2 * Theme.paddingMedium)
+    height: Math.max(56, labels.height + 16)
     enabled: !locked
     Accessible.role: Accessible.Button
     Accessible.name: text
@@ -18,40 +18,41 @@ BackgroundItem {
 
     Column {
         id: labels
-        x: Theme.horizontalPageMargin
-        width: toggle.width - x - switchTrack.width - 2 * Theme.paddingLarge
+        x: 16
+        width: toggle.width - x - switchTrack.width - 32
         anchors.verticalCenter: parent.verticalCenter
-        spacing: Theme.paddingSmall
+        spacing: 4
         Label {
             width: parent.width
             text: toggle.text
             wrapMode: Text.Wrap
-            color: toggle.enabled ? Theme.primaryColor : Theme.secondaryColor
+            color: toggle.enabled ? AppStyle.text : AppStyle.muted
+            font.pixelSize: 16
         }
         Label {
             visible: toggle.description.length > 0
             width: parent.width
             text: toggle.description
             wrapMode: Text.Wrap
-            font.pixelSize: Theme.fontSizeExtraSmall
-            color: Theme.secondaryColor
+            font.pixelSize: 12
+            color: AppStyle.muted
         }
     }
     Rectangle {
         id: switchTrack
-        anchors { right: parent.right; rightMargin: Theme.horizontalPageMargin; verticalCenter: parent.verticalCenter }
-        width: Theme.itemSizeSmall + Theme.paddingMedium
-        height: Theme.iconSizeMedium
+        anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter }
+        width: 56
+        height: 32
         radius: height / 2
-        color: toggle.checked ? Theme.highlightBackgroundColor : Theme.rgba(Theme.secondaryColor, 0.55)
-        opacity: toggle.enabled ? 1 : 0.45
+        color: toggle.checked ? AppStyle.accent : "#666666"
+        opacity: toggle.enabled ? 1 : 0.7
         Rectangle {
-            width: parent.height - 2 * Theme.paddingSmall
+            width: parent.height - 4
             height: width
             radius: width / 2
             anchors.verticalCenter: parent.verticalCenter
-            x: toggle.checked ? parent.width - width - Theme.paddingSmall : Theme.paddingSmall
-            color: Theme.primaryColor
+            x: toggle.checked ? parent.width - width - 2 : 2
+            color: AppStyle.text
         }
     }
 }

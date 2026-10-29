@@ -6,72 +6,101 @@ SilicaFlickable {
     id: view
     property string serverError
     property bool ready: false
-    contentHeight: body.height + Theme.paddingLarge
+    contentHeight: body.height + 16
     Component.onCompleted: ready = true
+
     function saveServer() {
         if (!ready || serverField.text === appState.server) return
-        if (!appState.saveSettings(serverField.text, appState.audioMuted, appState.videoMuted)) serverError = appState.lastError
-        else { serverError = ""; serverField.text = appState.server }
+        if (!appState.saveSettings(serverField.text, appState.audioMuted, appState.videoMuted))
+            serverError = appState.lastError
+        else {
+            serverError = ""
+            serverField.text = appState.server
+        }
     }
+
+    Rectangle { anchors.fill: parent; color: AppStyle.surface }
     Column {
         id: body
         width: parent.width
-        ListItem {
-            width: parent.width
-            contentHeight: Theme.itemSizeExtraLarge + Theme.paddingLarge
+
+        Item { width: 1; height: 16 }
+        BackgroundItem {
+            x: 16
+            width: parent.width - 32
+            height: 96
             onClicked: pageStack.push(Qt.resolvedUrl("ProfilePage.qml"), {mainPage: pageStack.currentPage})
+            Rectangle { anchors.fill: parent; radius: 6; color: AppStyle.raised }
             Avatar {
                 id: avatar
-                x: Theme.horizontalPageMargin
+                x: 16
                 anchors.verticalCenter: parent.verticalCenter
-                width: Theme.itemSizeLarge
+                width: 64
                 name: appState.displayName
                 imageUrl: appState.avatarUrl
             }
-            Column {
-                x: avatar.x + avatar.width + Theme.paddingLarge
+            Label {
+                x: 96
                 anchors.verticalCenter: parent.verticalCenter
-                width: parent.width - x - Theme.itemSizeSmall
-                Label { width: parent.width; text: appState.displayName || qsTr("Профиль"); truncationMode: TruncationMode.Fade }
+                width: parent.width - 136
+                text: appState.displayName
+                color: AppStyle.text
+                font.pixelSize: 16
+                truncationMode: TruncationMode.Fade
             }
             Icon {
-                anchors { right: parent.right; rightMargin: Theme.horizontalPageMargin; verticalCenter: parent.verticalCenter }
+                anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter }
                 source: Qt.resolvedUrl("../icons/arrow-right.svg")
-                width: Theme.iconSizeSmall; height: width; color: Theme.secondaryColor
+                width: 24; height: width; color: AppStyle.text
             }
         }
+        Item { width: 1; height: 16 }
         SettingToggle { text: qsTr("Скрыть собственное представление"); preferenceKey: "hideSelfView" }
-        ComboBox {
+        BackgroundItem {
             width: parent.width
-            label: qsTr("Язык")
-            currentIndex: appState.preferences.language === "en" ? 1 : 0
-            menu: ContextMenu {
-                MenuItem { text: "Русский"; onClicked: appState.setPreference("language", "ru") }
-                MenuItem { text: "English"; onClicked: appState.setPreference("language", "en") }
+            height: 56
+            onClicked: pageStack.push(Qt.resolvedUrl("LanguagePage.qml"), {mainPage: pageStack.currentPage})
+            Label {
+                x: 16
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("Язык")
+                color: AppStyle.text; font.pixelSize: 16
+            }
+            Icon {
+                anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter }
+                source: Qt.resolvedUrl("../icons/arrow-right.svg")
+                width: 20; height: width; color: AppStyle.text
+            }
+            Label {
+                anchors { right: parent.right; rightMargin: 42; verticalCenter: parent.verticalCenter }
+                text: appState.preferences.language === "en" ? "English" : "Русский"
+                color: AppStyle.text; font.pixelSize: 16
             }
         }
         SettingSection { text: qsTr("Номера для набора") }
-        TextField {
+        Label {
+            x: 16; width: parent.width - 32
+            text: qsTr("Адрес сервера")
+            color: AppStyle.text; font.pixelSize: 16
+        }
+        Item { width: 1; height: 8 }
+        JitsiField {
             id: serverField
-            width: parent.width
+            x: 16; width: parent.width - 32
             text: appState.server
-            label: qsTr("Адрес сервера")
             placeholderText: "https://meet.jit.si"
             inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoAutoUppercase
-            onFocusChanged: if (!focus) view.saveServer()
-            EnterKey.iconSource: "image://theme/icon-m-enter-accept"
-            EnterKey.onClicked: { view.saveServer(); focus = false }
+            onFieldActiveFocusChanged: if (!fieldActiveFocus) view.saveServer()
+            onAccepted: view.saveServer()
         }
         Label {
-            x: Theme.horizontalPageMargin; width: parent.width - 2*x
+            x: 16; width: parent.width - 32
             visible: view.serverError.length > 0
-            text: view.serverError; wrapMode: Text.Wrap; color: Theme.highlightColor
-            font.pixelSize: Theme.fontSizeSmall
+            text: view.serverError
+            color: AppStyle.danger; wrapMode: Text.Wrap; font.pixelSize: 14
         }
-        SettingToggle {
-            text: qsTr("Включать упрощённый режим на ограниченном канале")
-            preferenceKey: "lowBandwidth"
-        }
+        Item { width: 1; height: 8 }
+        SettingToggle { text: qsTr("Включать упрощённый режим на ограниченном канале"); preferenceKey: "lowBandwidth" }
         SettingToggle { text: qsTr("Начать с отключённым звуком"); preferenceKey: "audioMuted" }
         SettingToggle { text: qsTr("Начать с отключённым видео"); preferenceKey: "videoMuted" }
         SettingSection { text: qsTr("Включить звук") }
@@ -87,28 +116,19 @@ SilicaFlickable {
         SettingToggle { text: qsTr("Отключить режим Peer-To-Peer"); preferenceKey: "disableP2p" }
         SettingToggle { text: qsTr("Отключить отправку отчётов о сбоях"); locked: true }
         SettingSection { text: qsTr("Информация о сборке") }
-        DetailItem { label: qsTr("Версия"); value: "0.1.24" }
+        Item {
+            width: parent.width; height: 56
+            Label { x: 16; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Версия"); color: AppStyle.text; font.pixelSize: 16 }
+            Label { anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter } text: "0.1.34"; color: AppStyle.muted; font.pixelSize: 14 }
+        }
         Row {
-            width: parent.width
+            width: parent.width; height: 56
             Repeater {
                 model: [qsTr("Помощь"), qsTr("Условия"), qsTr("Конфиденциальность")]
                 delegate: BackgroundItem {
-                    width: body.width/3
-                    height: Math.max(Theme.itemSizeLarge, linkText.implicitHeight + 2*Theme.paddingMedium)
-                    Accessible.name: modelData
-                    Label {
-                        id: linkText
-                        anchors.centerIn: parent
-                        width: parent.width - 2*Theme.paddingSmall
-                        text: modelData; wrapMode: Text.Wrap
-                        horizontalAlignment: Text.AlignHCenter
-                        color: Theme.highlightColor; font.pixelSize: Theme.fontSizeExtraSmall
-                    }
-                    onClicked: {
-                        Qt.openUrlExternally(index === 0 ? "https://jitsi.org/user-faq/"
-                                             : index === 1 ? "https://jitsi.org/meet-jit-si-terms-of-service/"
-                                             : "https://jitsi.org/meet-jit-si-privacy/")
-                    }
+                    width: body.width / 3; height: 56
+                    Label { anchors.centerIn: parent; width: parent.width - 8; text: modelData; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap; color: AppStyle.text; font.pixelSize: 14; font.bold: true }
+                    onClicked: Qt.openUrlExternally(index === 0 ? "https://jitsi.org/user-faq/" : index === 1 ? "https://jitsi.org/meet-jit-si-terms-of-service/" : "https://jitsi.org/meet-jit-si-privacy/")
                 }
             }
         }

@@ -16,21 +16,29 @@ Page {
         if (pane.item && pane.item.formError !== undefined) pane.item.formError = room.id ? "" : appState.lastError
         if (room.id) pageStack.push(Qt.resolvedUrl("PreJoinPage.qml"), {room:room})
     }
-    ScreenHeader {
-        id: header
-        title: page.selectedTab === 2 ? qsTr("Настройки") : qsTr("Jitsi Meet")
-    }
-    Loader {
-        id: pane
-        clip: true
-        anchors { top: header.bottom; bottom: navigation.top; left: parent.left; right: parent.right }
-        source: Qt.resolvedUrl(["RecentsView.qml", "CalendarView.qml", "SettingsView.qml"][page.selectedTab])
-        onLoaded: if (item.openRoom) item.openRoom.connect(page.prepareRoom)
-    }
-    BottomNavigation {
-        id: navigation
-        anchors { bottom: parent.bottom; left: parent.left; right: parent.right }
-        selectedTab: page.selectedTab
-        onTabSelected: page.selectedTab = index
+    Item {
+        id: viewport
+        width: page.width / 2
+        height: page.height / 2
+        scale: 2
+        transformOrigin: Item.TopLeft
+        Rectangle { anchors.fill: parent; color: AppStyle.background }
+        ScreenHeader {
+            id: header
+            title: page.selectedTab === 2 ? qsTr("Настройки") : qsTr("Jitsi Meet")
+        }
+        Loader {
+            id: pane
+            clip: true
+            anchors { top: header.bottom; bottom: navigation.top; left: parent.left; right: parent.right }
+            source: Qt.resolvedUrl(["RecentsView.qml", "CalendarView.qml", "SettingsView.qml"][page.selectedTab])
+            onLoaded: if (item.openRoom) item.openRoom.connect(page.prepareRoom)
+        }
+        BottomNavigation {
+            id: navigation
+            anchors { bottom: parent.bottom; left: parent.left; right: parent.right }
+            selectedTab: page.selectedTab
+            onTabSelected: page.selectedTab = index
+        }
     }
 }

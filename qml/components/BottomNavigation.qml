@@ -7,8 +7,8 @@ Rectangle {
     property int selectedTab: 0
     signal tabSelected(int index)
 
-    height: Math.max(Theme.itemSizeLarge, Theme.fontSizeExtraSmall + Theme.iconSizeMedium + 3*Theme.paddingSmall)
-    color: Theme.rgba(Theme.primaryColor, 0.06)
+    height: 70
+    color: AppStyle.surface
     Rectangle { width: parent.width; height: 1; color: AppStyle.border }
     Row {
         anchors.fill: parent
@@ -22,20 +22,20 @@ Rectangle {
                 Column {
                     anchors.centerIn: parent
                     width: parent.width
-                    spacing: Theme.paddingSmall
+                    spacing: 4
                     Icon {
                         anchors.horizontalCenter: parent.horizontalCenter
                         source: index === 0 ? "image://theme/icon-m-history" : Qt.resolvedUrl("../icons/" + (index === 1 ? "calendar" : "gear") + ".svg")
-                        width: Theme.iconSizeMedium; height: width
-                        color: navigation.selectedTab === index ? Theme.highlightColor : Theme.secondaryColor
+                        width: 24; height: width
+                        color: navigation.selectedTab === index ? AppStyle.text : AppStyle.inactive
                     }
                     Label {
                         width: parent.width
                         text: modelData
                         horizontalAlignment: Text.AlignHCenter
-                        font.pixelSize: Theme.fontSizeExtraSmall
+                        font.pixelSize: 12
                         font.bold: navigation.selectedTab === index
-                        color: navigation.selectedTab === index ? Theme.highlightColor : Theme.secondaryColor
+                        color: navigation.selectedTab === index ? AppStyle.text : AppStyle.inactive
                     }
                 }
                 onClicked: navigation.tabSelected(index)

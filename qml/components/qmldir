@@ -1,4 +1,5 @@
 singleton AppStyle 1.0 AppStyle.qml
+JitsiField 1.0 JitsiField.qml
 AppButton 1.0 AppButton.qml
 Avatar 1.0 Avatar.qml
 ScreenHeader 1.0 ScreenHeader.qml

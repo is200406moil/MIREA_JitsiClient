@@ -17,8 +17,8 @@ BackgroundItem {
         y: (control.height - height) / 2
         width: Math.min(Theme.itemSizeMedium, control.width - Theme.paddingMedium)
         height: width
-        radius: control.destructive ? Theme.paddingMedium : width / 2
-        color: control.destructive ? AppStyle.danger : control.checked ? AppStyle.accent : AppStyle.raised
+        radius: control.destructive ? 6 : 0
+        color: control.destructive ? AppStyle.danger : "transparent"
         opacity: control.down ? 0.6 : control.enabled ? 1 : 0.35
         border.width: control.activeFocus ? 2 : 0
         border.color: AppStyle.accentLight
