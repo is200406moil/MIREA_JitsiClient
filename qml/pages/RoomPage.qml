@@ -17,12 +17,17 @@ Page {
     property bool audioMuted: initialAudioMuted
     property bool videoMuted: initialVideoMuted
     property bool joined: false
+    property bool waitingForModerator: false
+    property bool controlsVisible: true
+    property bool warningExpanded: false
+    readonly property bool unsafeRoomName: page.roomName.trim().length > 0 && page.roomName.trim().length <= 8
     property bool apiReady: false
     property bool leaving: false
     property int participantCount: 0
     property string message
     property bool loadFailed: false
     property var authPopup: null
+    property var authPopups: []
     property int cameraCount: -1
     property bool cameraIssue: false
     property bool moreOpen: false
@@ -61,18 +66,38 @@ Page {
     }
 
     function showPopup(popup) {
-        if (authPopup) authPopup.destroy()
+        if (authPopup) authPopup.visible = false
+        var popups = authPopups.slice()
+        popups.push(popup)
+        authPopups = popups
         authPopup = popup
         popup.parent = popupContent
         popup.anchors.fill = popupContent
         popup.visible = true
         popup.forceActiveFocus()
     }
-    function closePopup() {
-        if (!authPopup) return
-        var popup = authPopup
-        authPopup = null
+    function closePopup(popup) {
+        popup = popup || authPopup
+        if (!popup) return
+        var popups = authPopups.slice()
+        var index = popups.indexOf(popup)
+        if (index < 0) return
+        popups.splice(index, 1)
+        authPopups = popups
+        if (authPopup === popup) {
+            authPopup = popups.length ? popups[popups.length - 1] : null
+            if (authPopup) {
+                authPopup.visible = true
+                authPopup.forceActiveFocus()
+            }
+        }
         popup.destroy()
+    }
+    function closeAllPopups() {
+        var popups = authPopups.slice()
+        authPopups = []
+        authPopup = null
+        for (var i = popups.length - 1; i >= 0; --i) popups[i].destroy()
     }
 
     function command(name) {
@@ -99,7 +124,7 @@ Page {
         chatOpen = false
         participantsOpen = false
         whiteboardOpen = false
-        closePopup()
+        closeAllPopups()
         if (apiReady) command("hangup")
         closeTimer.start()
     }
@@ -142,7 +167,7 @@ Page {
         onConferenceEvent: {
             switch (name) {
             case "apiReady": page.apiReady = true; break
-            case "videoConferenceJoined": page.joined = true; page.participantCount = 1; page.selfId = data.id || ""; page.message = ""; break
+            case "videoConferenceJoined": page.joined = true; page.waitingForModerator = false; page.participantCount = 1; page.selfId = data.id || ""; page.message = ""; break
             case "videoConferenceLeft": page.joined = false; page.participantCount = 0; page.participants = []; break
             case "whiteboardStatusChanged":
                 if (data.status === "SHOWN") page.openWhiteboard()
@@ -189,7 +214,7 @@ Page {
             case "scriptError": page.loadFailed = true; page.message = qsTr("Не удалось загрузить встречу с этого сервера. Проверьте его адрес и соединение."); break
             case "errorOccurred":
                 if (data.name === "conference.authenticationRequired")
-                    page.message = qsTr("Ожидаем организатора. Для начала встречи сервер требует вход в учётную запись.")
+                    page.waitingForModerator = true
                 else if (data.isFatal)
                     page.message = qsTr("Не удалось подключиться. Проверьте сообщение в окне встречи.")
                 break
@@ -197,23 +222,46 @@ Page {
             }
         }
     }
+    Timer {
+        interval: 5000
+        running: page.apiReady && !page.joined && !page.leaving && !page.waitingForModerator
+        onTriggered: page.waitingForModerator = true
+    }
     Column {
         id: topPanel
-        visible: !page.whiteboardOpen
+        visible: !page.whiteboardOpen && page.controlsVisible
         width: parent.width
         Rectangle {
             width: parent.width
             height: 68
             color: AppStyle.background
-            Label {
+            Row {
                 x: 16
-                width: Math.min(parent.width * 0.40, 140)
                 anchors.verticalCenter: parent.verticalCenter
-                text: page.roomName
-                font.pixelSize: 31
-                font.bold: true
-                color: AppStyle.text
-                truncationMode: TruncationMode.Fade
+                spacing: 10
+                Label {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Math.min(implicitWidth, page.width * 0.30)
+                    text: page.roomName
+                    font.pixelSize: 31
+                    font.bold: true
+                    color: AppStyle.text
+                    truncationMode: TruncationMode.Fade
+                }
+                BackgroundItem {
+                    visible: page.unsafeRoomName && page.joined
+                    width: visible ? 72 : 0
+                    height: 60
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("Информация о безопасности комнаты")
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: 60; height: 60; radius: 7
+                        color: AppStyle.danger
+                        Icon { anchors.centerIn: parent; source: Qt.resolvedUrl("../icons/warning.svg"); width: 38; height: 38; color: AppStyle.text }
+                    }
+                    onClicked: page.warningExpanded = !page.warningExpanded
+                }
             }
             Row {
                 anchors { right: parent.right; rightMargin: 8; verticalCenter: parent.verticalCenter }
@@ -236,6 +284,22 @@ Page {
                     Label { anchors { right: parent.right; top: parent.top } text: page.participantCount; font.pixelSize: 20; color: AppStyle.muted }
                     onClicked: page.participantsOpen = true
                 }
+            }
+        }
+        Rectangle {
+            visible: page.warningExpanded && page.unsafeRoomName && page.joined
+            width: parent.width
+            height: visible ? warningText.height + 20 : 0
+            radius: 5
+            color: AppStyle.danger
+            Label {
+                id: warningText
+                x: 16; y: 8
+                width: parent.width - 32
+                text: qsTr("Название комнаты небезопасно. Нежелательные участники могут присоединиться к вашей встрече. Рассмотрите возможность защиты вашей встречи с использованием кнопки безопасности. Узнайте больше о защите вашей встречи here.")
+                color: AppStyle.text
+                font.pixelSize: 25
+                wrapMode: Text.Wrap
             }
         }
         Rectangle {
@@ -281,8 +345,8 @@ Page {
     WebView {
         id: webView
         anchors {
-            top: page.whiteboardOpen ? whiteboardHeader.bottom : topPanel.bottom
-            bottom: page.whiteboardOpen ? whiteboardFooter.top : callBar.top
+            top: page.whiteboardOpen ? whiteboardHeader.bottom : page.controlsVisible ? topPanel.bottom : parent.top
+            bottom: page.whiteboardOpen ? whiteboardFooter.top : page.controlsVisible ? callBar.top : parent.bottom
             left: parent.left
             right: parent.right
         }
@@ -308,6 +372,19 @@ Page {
         }
         onLoadStart: page.loadFailed = false
     }
+    MouseArea {
+        anchors {
+            left: webView.left
+            right: webView.right
+            top: webView.top
+            topMargin: webView.height * 0.27
+            bottom: webView.bottom
+            bottomMargin: webView.height * 0.38
+        }
+        z: 2
+        enabled: page.joined && !page.waitingForModerator && !page.whiteboardOpen
+        onClicked: page.controlsVisible = !page.controlsVisible
+    }
     BusyIndicator {
         anchors.centerIn: webView
         size: BusyIndicatorSize.Large
@@ -328,7 +405,7 @@ Page {
     }
     Rectangle {
         id: callBar
-        visible: !page.whiteboardOpen
+        visible: !page.whiteboardOpen && page.controlsVisible
         anchors { bottom: parent.bottom; left: parent.left; right: parent.right }
         height: 80
         color: AppStyle.background
@@ -382,6 +459,105 @@ Page {
         visible: page.whiteboardOpen
         height: visible ? 54 : 0
         color: AppStyle.background
+    }
+    Item {
+        id: waitingOverlay
+        anchors.fill: parent
+        z: 70
+        visible: page.waitingForModerator && !page.joined && !page.leaving && !page.authPopup
+        Rectangle { anchors.fill: parent; color: AppStyle.background }
+        Rectangle {
+            width: parent.width; height: 90; color: AppStyle.surface
+            BackgroundItem {
+                width: 150; height: parent.height
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("Закрыть")
+                Label { anchors.centerIn: parent; text: qsTr("Закрыть"); color: AppStyle.accent; font.pixelSize: 30 }
+                onClicked: page.closeMeeting()
+            }
+            Label {
+                anchors.centerIn: parent
+                text: "Lobby"
+                color: AppStyle.text
+                font.pixelSize: 32
+                font.bold: true
+            }
+        }
+        Label {
+            anchors { top: parent.top; topMargin: 125; horizontalCenter: parent.horizontalCenter }
+            text: page.roomName
+            color: AppStyle.muted
+            font.pixelSize: 32
+            font.bold: true
+        }
+        Avatar {
+            y: waitingOverlay.height * 0.23
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: Math.min(waitingOverlay.width * 0.52, 360)
+            name: appState.displayName
+            imageUrl: appState.avatarUrl
+        }
+        Rectangle {
+            y: waitingOverlay.height * 0.58
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: 176; height: 88; radius: 7; color: AppStyle.surface
+            Row {
+                anchors.fill: parent
+                BackgroundItem {
+                    width: 88; height: 88
+                    Accessible.role: Accessible.Button
+                    Accessible.name: page.audioMuted ? qsTr("Включить микрофон") : qsTr("Выключить микрофон")
+                    Icon { anchors.centerIn: parent; source: Qt.resolvedUrl("../icons/" + (page.audioMuted ? "mic-slash" : "mic") + ".svg"); width: 48; height: 48; color: AppStyle.text }
+                    onClicked: page.command("toggleAudio")
+                }
+                BackgroundItem {
+                    width: 88; height: 88
+                    Accessible.role: Accessible.Button
+                    Accessible.name: page.videoMuted ? qsTr("Включить камеру") : qsTr("Выключить камеру")
+                    Icon { anchors.centerIn: parent; source: Qt.resolvedUrl("../icons/" + (page.videoMuted ? "video-off" : "video") + ".svg"); width: 48; height: 48; color: AppStyle.text }
+                    onClicked: page.command("toggleVideo")
+                }
+            }
+        }
+        Label {
+            y: waitingOverlay.height * 0.64
+            width: parent.width - 32; x: 16
+            text: qsTr("Просьба присоединиться к встрече...")
+            color: AppStyle.text
+            font.pixelSize: 34
+            font.bold: true
+            wrapMode: Text.Wrap
+            horizontalAlignment: Text.AlignHCenter
+        }
+        BusyIndicator {
+            anchors { horizontalCenter: parent.horizontalCenter; top: parent.top; topMargin: waitingOverlay.height * 0.70 }
+            size: BusyIndicatorSize.Medium
+            running: waitingOverlay.visible
+        }
+        Label {
+            y: waitingOverlay.height * 0.75
+            width: parent.width - 32; x: 16
+            text: qsTr("Вы присоединитесь к встрече, как только кто-то примет ваш запрос")
+            color: AppStyle.text
+            font.pixelSize: 27
+            wrapMode: Text.Wrap
+            horizontalAlignment: Text.AlignHCenter
+        }
+        Rectangle {
+            // The meeting's own organizer button remains active directly underneath.
+            anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: callBar.height + 156 }
+            width: Math.min(parent.width - 32, 456)
+            height: 80
+            radius: 6
+            color: AppStyle.accent
+            Label {
+                anchors.centerIn: parent
+                text: qsTr("Я организатор")
+                color: AppStyle.text
+                font.pixelSize: 27
+                font.bold: true
+            }
+        }
     }
     Rectangle {
         anchors.fill: parent
@@ -692,9 +868,14 @@ Page {
             TouchInput { enabled: true }
             KeyboardInput { enabled: true }
             PopupExtension {
-                function beforePopup(address, frameName, userGesture) { return null }
+                function beforePopup(address, frameName, userGesture) {
+                    if (page.authPopups.length >= 3) return null
+                    if (address.scheme !== "https" && !(address.scheme === "about" && address.path === "blank")) return null
+                    return loginPopupComponent
+                }
+                function popupReady(popup) { page.showPopup(popup) }
             }
-            onClosing: page.closePopup()
+            onClosing: page.closePopup(this)
         }
     }
     Rectangle {

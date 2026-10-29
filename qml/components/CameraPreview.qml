@@ -4,7 +4,15 @@ import QtMultimedia 5.6
 Item {
     id: preview
     signal unavailable()
-    function release() { camera.cameraState = Camera.UnloadedState }
+    property bool released: false
+    function release() {
+        if (released) return
+        released = true
+        videoOutput.visible = false
+        videoOutput.source = null
+        camera.stop()
+        camera.cameraState = Camera.UnloadedState
+    }
 
     Camera {
         id: camera
@@ -14,6 +22,7 @@ Item {
         onError: preview.unavailable()
     }
     VideoOutput {
+        id: videoOutput
         anchors.fill: parent
         source: camera
         fillMode: VideoOutput.PreserveAspectCrop

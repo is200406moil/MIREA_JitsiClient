@@ -14,6 +14,10 @@ Page {
     property bool previewAllowed: true
     property bool previewUnavailable: false
     property bool requestedVideoOff: false
+    property bool unsafeWarningOpen: false
+    property bool unsafeWarningAccepted: false
+    property bool pendingWithoutVideo: false
+    readonly property bool unsafeRoomName: page.room && page.room.name && page.room.name.trim().length > 0 && page.room.name.trim().length <= 8
     Rectangle { anchors.fill: parent; color: AppStyle.background }
     function resetPreview() {
         page.joining = false
@@ -22,6 +26,11 @@ Page {
     }
     function join(withoutVideo) {
         if (page.joining) return
+        if (page.unsafeRoomName && !page.unsafeWarningAccepted) {
+            page.pendingWithoutVideo = withoutVideo
+            page.unsafeWarningOpen = true
+            return
+        }
         if (!appState.saveProfile(nameField.text, appState.email)) {
             page.formError = appState.lastError
             return
@@ -89,7 +98,7 @@ Page {
                 Loader {
                     id: previewLoader
                     anchors.fill: parent
-                    active: !page.muteVideo && page.previewAllowed && !page.previewUnavailable
+                    active: !page.muteVideo && (page.previewAllowed || page.joining) && !page.previewUnavailable
                     source: Qt.resolvedUrl("../components/CameraPreview.qml")
                     onLoaded: item.unavailable.connect(function() { page.previewUnavailable = true })
                 }
@@ -175,5 +184,66 @@ Page {
         }
         VerticalScrollDecorator {}
     }
+    }
+    Item {
+        id: unsafeWarning
+        anchors.fill: parent
+        z: 100
+        visible: page.unsafeWarningOpen
+        Rectangle { anchors.fill: parent; color: AppStyle.surface }
+        Rectangle {
+            width: parent.width; height: 90; color: AppStyle.surface
+            BackgroundItem {
+                width: 150; height: parent.height
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("Закрыть")
+                Label { anchors.centerIn: parent; text: qsTr("Закрыть"); color: AppStyle.accent; font.pixelSize: 30 }
+                onClicked: page.unsafeWarningOpen = false
+            }
+            Label {
+                anchors.centerIn: parent
+                text: qsTr("Присоединиться к встрече")
+                color: AppStyle.text
+                font.pixelSize: 32
+            }
+        }
+        Label {
+            anchors { top: parent.top; topMargin: 125; horizontalCenter: parent.horizontalCenter }
+            text: page.room ? page.room.name : ""
+            color: AppStyle.muted
+            font.pixelSize: 32
+            font.bold: true
+        }
+        Rectangle {
+            width: 180; height: 180; radius: 90
+            anchors { horizontalCenter: parent.horizontalCenter; top: parent.top; topMargin: parent.height * 0.30 }
+            color: "#FFB518"
+            Icon { anchors.centerIn: parent; source: Qt.resolvedUrl("../icons/warning.svg"); width: 95; height: 95; color: "#111111" }
+        }
+        Label {
+            x: 40
+            y: parent.height * 0.49
+            width: parent.width - 80
+            text: qsTr("Название комнаты небезопасно. Нежелательные участники могут присоединиться к вашей встрече. Рассмотрите возможность использования более уникального имени встречи. Узнайте больше о защите вашей встречи here.")
+            color: AppStyle.text
+            font.pixelSize: 29
+            wrapMode: Text.Wrap
+            horizontalAlignment: Text.AlignHCenter
+        }
+        BackgroundItem {
+            x: 40
+            y: parent.height * 0.76
+            width: parent.width - 80
+            height: 88
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("Продолжить в любом случае")
+            Rectangle { anchors.fill: parent; radius: 7; color: "#E4E4E4" }
+            Label { anchors.centerIn: parent; text: qsTr("Продолжить в любом случае"); color: "#111111"; font.pixelSize: 28; font.bold: true }
+            onClicked: {
+                page.unsafeWarningOpen = false
+                page.unsafeWarningAccepted = true
+                page.join(page.pendingWithoutVideo)
+            }
+        }
     }
 }
