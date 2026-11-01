@@ -148,7 +148,12 @@ SilicaFlickable {
         // NotificationsSection
         SettingDivider {}
         SettingSection { text: appState.t("settings.playSounds") }
-        SettingToggle { text: appState.t("settings.reactions"); preferenceKey: "soundReactions" }
+        SettingToggle {
+            text: appState.t("settings.reactions")
+            preferenceKey: "soundReactions"
+            // NotificationsSection: off while the moderator mutes reactions.
+            enabled: !(view.roomPage && view.roomPage.reactionsMuted)
+        }
         SettingToggle { text: appState.t("settings.incomingMessage"); preferenceKey: "soundMessage" }
         SettingToggle { text: appState.t("settings.participantJoined"); preferenceKey: "soundJoined" }
         SettingToggle { text: appState.t("settings.participantLeft"); preferenceKey: "soundLeft" }
@@ -225,7 +230,7 @@ SilicaFlickable {
         Repeater {
             // Version of the application and of the Aurora OS SDK it is built with.
             model: [
-                { label: "settingsView.version", value: "0.1 build 76" },
+                { label: "settingsView.version", value: "0.1 build 78" },
                 { label: "settingsView.sdkVersion", value: "5.2.1.200" }
             ]
             delegate: Item {

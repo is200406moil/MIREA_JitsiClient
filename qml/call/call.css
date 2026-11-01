@@ -330,3 +330,19 @@ h1 { margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; }
 /* ChatInputBar.native when sending is not allowed. */
 .chat-input[hidden] { display: none; }
 .chat-disabled { flex: none; padding: 16px; text-align: center; color: var(--text03); background: var(--ui01); }
+
+/* RemoteVideoMenu.native: unavailable entries, the volume slider and the
+ * connection statistics (ConnectionStatusComponent.native). */
+.sheet-item.disabled { color: var(--text03); pointer-events: none; }
+.sheet-item.disabled .icon { color: var(--text03); }
+.sheet-volume { display: flex; align-items: center; gap: 16px; padding: 12px 16px 16px; }
+.sheet-volume input { flex: 1; height: 24px; margin: 0; background: transparent; -webkit-appearance: none; appearance: none; --fill: 100%; }
+.sheet-volume input::-webkit-slider-runnable-track { height: 2px; border-radius: 1px;
+    background: linear-gradient(to right, var(--action01) var(--fill), var(--ui04) var(--fill)); }
+.sheet-volume input::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; margin-top: -7px; border-radius: 50%;
+    background: var(--text01); }
+.stats-table { padding: 8px 16px 16px; }
+.stats-row { display: flex; align-items: center; gap: 6px; min-height: 32px; }
+.stats-label { font-weight: 600; margin-right: 6px; }
+.stats-row .icon { color: var(--text03); }
+.stats-value { color: var(--text02); }

@@ -214,6 +214,9 @@
         polls: new Map(),
         pollsUnread: 0,
         pollDraft: null,
+        volumes: new Map(),
+        localStats: null,
+        remoteStats: new Map(),
         followMe: false,
         followMeRecorder: false,
         followMeModerator: '',
@@ -383,6 +386,7 @@
             else {
                 view = el('div', className);
                 view.addEventListener('click', event => options.onClick(view.dataset.id, event));
+                if (options.menu) onLongPress(view, () => openParticipantMenu(view.dataset.id));
             }
             updateView(view, p, options);
             if (container.children[index] !== view) container.insertBefore(view, container.children[index] || null);
@@ -407,14 +411,14 @@
             const people = [...state.remotes.values()];
             if (showSelf || !people.length) people.push(state.local);
             layoutTiles(people.length);
-            reconcile($('tiles'), people, 'tile participant', { indicators: true, name: true, onClick: toggleToolbox });
+            reconcile($('tiles'), people, 'tile participant', { indicators: true, name: true, menu: true, onClick: toggleToolbox });
         } else {
             reconcile($('tiles'), [], 'tile', {});
             const videoOnStage = !!state.sharedVideo && !state.pinnedId;
             reconcile($('stage'), videoOnStage ? [] : [stageParticipant()], 'participant', { onClick: toggleToolbox });
             const thumbs = state.remotes.size || state.sharedVideo ? [...state.remotes.values()] : [];
             if (thumbs.length && showSelf) thumbs.push(state.local);
-            reconcile($('filmstrip'), thumbs, 'thumbnail participant', { indicators: true, onClick: togglePin });
+            reconcile($('filmstrip'), thumbs, 'thumbnail participant', { indicators: true, menu: true, onClick: togglePin });
             $('filmstrip').hidden = !thumbs.length;
         }
         updateReceiverConstraints();
@@ -662,6 +666,7 @@
     // ----------------------------------------------------------- bottom sheet
 
     function closeSheet() {
+        delete $('sheet').dataset.stats;
         $('sheet').hidden = true;
         $('sheet-backdrop').hidden = true;
         $('sheet').textContent = '';
@@ -902,7 +907,7 @@
         if (!audio || audio.isMuted()) audioIcon.classList.add('muted');
         states.append(videoIcon, audioIcon);
         item.appendChild(states);
-        if (!p.local) item.addEventListener('click', () => openParticipantMenu(p.id));
+        item.addEventListener('click', () => openParticipantMenu(p.id));
         return item;
     }
 
@@ -932,29 +937,82 @@
         $('breakout-button').hidden = !breakoutRoomsVisible();
     }
 
+    // RemoteVideoMenu.native: the participant's menu from the participants
+    // list or a long press on the thumbnail.
     function openParticipantMenu(id) {
+        if (id === state.localId || id === 'local') { openLocalMenu(); return; }
         const p = person(id);
         if (!p) return;
         const moderator = isModerator();
+        const config = state.serverConfig || {};
+        const remoteMute = moderator && !config.disableRemoteMute;
+        const audioMuted = !p.tracks.audio || p.tracks.audio.isMuted();
+        const videoMuted = !p.tracks.video || p.tracks.video.isMuted();
         openSheet(sheet => {
-            const title = el('div', 'sheet-title');
-            title.appendChild(avatar(p));
-            title.lastChild.style.cssText = 'width:32px;height:32px;font-size:13px';
-            title.appendChild(el('span', '', displayNameOf(p)));
-            sheet.appendChild(title);
-            if (moderator && p.tracks.audio && !p.tracks.audio.isMuted()) {
-                sheetItem(sheet, 'mic-slash', t('participantsPane.actions.mute'), () => state.conference.muteParticipant(p.id, 'audio'));
+            sheetHeader(sheet, p);
+            // AskUnmuteButton: under audio moderation, let the participant speak.
+            if (moderator && state.avModeration && state.avModeration.audio && audioMuted
+                    && typeof state.conference.avModerationApprove === 'function') {
+                sheetItem(sheet, 'mic', t('participantsPane.actions.askUnmute'), () => state.conference.avModerationApprove('audio', p.id));
             }
-            if (moderator && p.tracks.video && !p.tracks.video.isMuted()) {
-                sheetItem(sheet, 'video-off', t('participantsPane.actions.stopVideo'), () => state.conference.muteParticipant(p.id, 'video'));
+            if (remoteMute) {
+                sheetItem(sheet, 'mic-slash', t(audioMuted ? 'videothumbnail.muted' : 'videothumbnail.domute'), () => confirmDialog({
+                    text: t('dialog.muteParticipantBody'), confirmLabel: t('dialog.muteParticipantButton'),
+                    onConfirm: () => state.conference.muteParticipant(p.id, 'audio')
+                }), audioMuted ? 'disabled' : '');
             }
             if (moderator) {
-                sheetItem(sheet, 'user-deleted', t('videothumbnail.kick'), () => confirmDialog({
-                    title: t('dialog.kickParticipantTitle'), confirmLabel: t('dialog.kickParticipantButton'), danger: true,
-                    onConfirm: () => state.conference.kickParticipant(p.id)
-                }), 'danger');
+                sheetItem(sheet, 'mic-slash', t('videothumbnail.domuteOthers'), () => confirmDialog({
+                    title: t('dialog.muteEveryoneElseTitle', { whom: displayNameOf(p) }), text: t('dialog.muteEveryoneElseDialog'),
+                    confirmLabel: t('dialog.muteParticipantButton'),
+                    onConfirm: () => [...state.remotes.keys()].filter(other => other !== p.id)
+                        .forEach(other => state.conference.muteParticipant(other, 'audio'))
+                }));
             }
-            sheetItem(sheet, 'message', t('toolbar.privateMessage'), () => startPrivateChat(p.id));
+            if (moderator && isRaised(p.raisedHand) && typeof state.conference.lowerHand === 'function') {
+                sheetItem(sheet, 'raise-hand', t('participantsPane.actions.lowerHand'), () => state.conference.lowerHand(p.id));
+            }
+            if (remoteMute) {
+                sheetItem(sheet, 'video-off', t(videoMuted ? 'videothumbnail.videoMuted' : 'videothumbnail.domuteVideo'), () => confirmDialog({
+                    title: t('dialog.muteParticipantsVideoTitle'), text: t('dialog.muteParticipantsVideoBody'),
+                    confirmLabel: t('dialog.muteParticipantsVideoButton'),
+                    onConfirm: () => state.conference.muteParticipant(p.id, 'video')
+                }), videoMuted ? 'disabled' : '');
+            }
+            sheet.appendChild(el('div', 'sheet-divider'));
+            if (moderator && !(config.remoteVideoMenu && config.remoteVideoMenu.disableKick)) {
+                sheetItem(sheet, 'user-deleted', t('videothumbnail.kick'), () => confirmDialog({
+                    title: t('dialog.kickParticipantTitle'), text: t('dialog.kickParticipantDialog'),
+                    confirmLabel: t('dialog.kickParticipantButton'), danger: true,
+                    onConfirm: () => state.conference.kickParticipant(p.id)
+                }));
+            }
+            if (moderator && p.role !== 'moderator' && !isInBreakoutRoom()
+                    && !(config.remoteVideoMenu && config.remoteVideoMenu.disableGrantModerator)) {
+                sheetItem(sheet, 'moderator', t('videothumbnail.grantModerator'), () => confirmDialog({
+                    title: t('dialog.grantModeratorTitle'),
+                    text: t('dialog.grantModeratorDialog', { participantName: displayNameOf(p) }),
+                    confirmLabel: t('dialog.Yes'),
+                    onConfirm: () => state.conference.grantOwner(p.id)
+                }));
+            }
+            // PinButton: show the participant large.
+            sheetItem(sheet, 'enlarge', t('videothumbnail.show'), () => {
+                state.pinnedId = p.id;
+                if (state.tileView) state.tileView = false;
+                sendFollowMe();
+                closeScreen();
+                render();
+            });
+            if (moderator) {
+                sheetItem(sheet, 'users', t('videothumbnail.demote'), () => confirmDialog({
+                    title: t('dialog.demoteParticipantTitle'), text: t('dialog.demoteParticipantDialog'),
+                    confirmLabel: t('dialog.Yes'),
+                    onConfirm: () => state.conference.sendMessage({ type: 'visitors', action: 'demote-request', id: p.id, actor: state.localId })
+                }));
+            }
+            if (!chatSendDisabledFor(p.id)) sheetItem(sheet, 'message', t('toolbar.privateMessage'), () => startPrivateChat(p.id));
+            sheetItem(sheet, 'info', t('videothumbnail.connectionInfo'), () => openConnectionInfo(p.id));
             const rooms = Object.values(state.breakoutRooms);
             if (moderator && rooms.length > 1) {
                 sheet.appendChild(el('div', 'sheet-divider'));
@@ -963,14 +1021,170 @@
                     sheetItem(sheet, null, room.isMainRoom ? t('breakoutRooms.mainRoom') : room.name, () => sendParticipantToRoom(p.id, room.id));
                 });
             }
-            sheetItem(sheet, state.pinnedId === p.id ? 'pinned' : 'pin', t(state.pinnedId === p.id ? 'videothumbnail.unpinFromStage' : 'videothumbnail.pinToStage'), () => {
-                state.pinnedId = state.pinnedId === p.id ? '' : p.id;
-                if (state.tileView) state.tileView = false;
-                sendFollowMe();
-                closeScreen();
+            volumeSlider(sheet, p);
+        });
+    }
+
+    // LocalVideoMenu.native: self view, demote to visitor, connection info.
+    function openLocalMenu() {
+        const p = state.local;
+        const config = state.serverConfig || {};
+        openSheet(sheet => {
+            sheetHeader(sheet, p);
+            const hidden = !!prefs.hideSelfView;
+            sheetItem(sheet, hidden ? 'video' : 'video-off', t(hidden ? 'videothumbnail.showSelfView' : 'videothumbnail.hideSelfView'), () => {
+                prefs.hideSelfView = !hidden;
+                notify('preference', { key: 'hideSelfView', value: !hidden });
                 render();
             });
+            if (!config.disableSelfDemote && state.remotes.size > 0) {
+                sheetItem(sheet, 'users', t('videothumbnail.demote'), () => confirmDialog({
+                    title: t('dialog.demoteParticipantTitle'), text: t('dialog.demoteParticipantDialog'),
+                    confirmLabel: t('dialog.Yes'),
+                    onConfirm: demoteSelf
+                }));
+            }
+            sheetItem(sheet, 'info', t('videothumbnail.connectionInfo'), () => openConnectionInfo(p.id));
         });
+    }
+
+    // demoteRequest for oneself: join again as a visitor (preferVisitor).
+    async function demoteSelf() {
+        showConnecting(t('connectingOverlay.joiningRoom'));
+        await disconnect(true);
+        state.serverConfig = Object.assign({}, state.serverConfig, { preferVisitor: true });
+        if (!state.leaving) connect();
+    }
+
+    function sheetHeader(sheet, p) {
+        const title = el('div', 'sheet-title');
+        title.appendChild(avatar(p));
+        Object.assign(title.lastChild.style, { width: '32px', height: '32px', fontSize: '13px' });
+        title.appendChild(el('span', '', displayNameOf(p)));
+        sheet.appendChild(title);
+    }
+
+    // VolumeSlider.native: the local playback volume of the participant.
+    function volumeSlider(sheet, p) {
+        if (!p.tracks.audio) return;
+        const row = el('div', 'sheet-volume');
+        row.appendChild(icon('volume'));
+        const slider = el('input');
+        slider.type = 'range';
+        slider.min = '0';
+        slider.max = '1';
+        slider.step = '0.05';
+        slider.value = String(state.volumes.has(p.id) ? state.volumes.get(p.id) : 1);
+        const apply = () => {
+            const value = Number(slider.value);
+            state.volumes.set(p.id, value);
+            slider.style.setProperty('--fill', value * 100 + '%');
+            const sink = p.tracks.audio && p.tracks.audio._sink;
+            if (sink) sink.volume = value;
+        };
+        slider.addEventListener('input', apply);
+        slider.addEventListener('click', event => event.stopPropagation());
+        apply();
+        row.appendChild(slider);
+        sheet.appendChild(row);
+    }
+
+    // isSendPrivateChatDisabled for one recipient.
+    function chatSendDisabledFor(id) {
+        return !!id && !isModerator() && !!roomPermissions().privateChatRestricted;
+    }
+
+    // ConnectionStatusComponent.native: status, bitrate, packet loss,
+    // resolution and codecs from the connection quality statistics, updated
+    // while the sheet is open.
+    function openConnectionInfo(id) {
+        const local = id === state.localId || id === 'local';
+        const p = person(id);
+        if (!p) return;
+        const refresh = () => {
+            const sheet = $('sheet');
+            if (sheet.hidden || sheet.dataset.stats !== id) return false;
+            const stats = local ? state.localStats || {} : Object.assign({}, state.remoteStats.get(id));
+            const own = state.localStats || {};
+            const key = local ? state.localId : id;
+            const resolution = (own.resolution || {})[key] || stats.resolution;
+            const codec = (own.codec || {})[key] || stats.codec;
+            const bitrate = stats.bitrate || {};
+            const loss = stats.packetLoss || {};
+            const quality = typeof stats.connectionQuality === 'number' ? stats.connectionQuality : null;
+            const status = quality === null ? 'inactive' : quality > 66 ? 'good' : quality > 33 ? 'nonoptimal' : 'poor';
+            const values = sheet.querySelectorAll('[data-stat]');
+            values.forEach(node => {
+                switch (node.dataset.stat) {
+                case 'status': node.textContent = t(`connectionindicator.quality.${status}`); break;
+                case 'down': node.textContent = bitrate.download !== undefined ? `${bitrate.download}` : 'N/A'; break;
+                case 'up': node.textContent = bitrate.upload !== undefined ? `${bitrate.upload} Kbps` : 'N/A'; break;
+                case 'lossDown': node.textContent = loss.download !== undefined ? `${loss.download}%` : 'N/A'; break;
+                case 'lossUp': node.textContent = loss.upload !== undefined ? `${loss.upload}%` : 'N/A'; break;
+                case 'resolution': node.textContent = formatResolution(resolution); break;
+                case 'codec': node.textContent = formatCodec(codec); break;
+                }
+            });
+            return true;
+        };
+        openSheet(sheet => {
+            sheet.dataset.stats = id;
+            sheetHeader(sheet, p);
+            const table = el('div', 'stats-table');
+            const row = (label, cells) => {
+                const line = el('div', 'stats-row');
+                line.appendChild(el('span', 'stats-label', t(label)));
+                cells.forEach(cell => {
+                    if (cell.icon) line.appendChild(icon(cell.icon, 'small'));
+                    const value = el('span', 'stats-value', '');
+                    value.dataset.stat = cell.stat;
+                    line.appendChild(value);
+                });
+                table.appendChild(line);
+            };
+            row('connectionindicator.status', [{ stat: 'status' }]);
+            row('connectionindicator.bitrate', [{ icon: 'arrow-down', stat: 'down' }, { icon: 'arrow-up', stat: 'up' }]);
+            row('connectionindicator.packetloss', [{ icon: 'arrow-down', stat: 'lossDown' }, { icon: 'arrow-up', stat: 'lossUp' }]);
+            row('connectionindicator.resolution', [{ stat: 'resolution' }]);
+            row('connectionindicator.codecs', [{ stat: 'codec' }]);
+            sheet.appendChild(table);
+        });
+        refresh();
+        const timer = setInterval(() => { if (!refresh()) clearInterval(timer); }, 1000);
+    }
+
+    function formatResolution(resolution) {
+        if (!resolution) return 'N/A';
+        const list = typeof resolution.width === 'number' ? [resolution] : Object.values(resolution);
+        const text = list.filter(item => item && item.width).map(item => `${item.width}x${item.height}`).join(', ');
+        return text || 'N/A';
+    }
+
+    function formatCodec(codec) {
+        if (!codec) return 'N/A';
+        const list = codec.audio || codec.video ? [codec] : Object.values(codec);
+        const audio = [...new Set(list.map(item => item && item.audio).filter(Boolean))].join(', ');
+        const video = [...new Set(list.map(item => item && item.video).filter(Boolean))].join(', ');
+        return [audio, video].filter(Boolean).join(', ') || 'N/A';
+    }
+
+    // A long press, like onLongPress of the native thumbnails; the click
+    // that ends it is swallowed.
+    function onLongPress(node, handler) {
+        let timer = 0;
+        let fired = false;
+        const cancel = () => clearTimeout(timer);
+        node.addEventListener('pointerdown', () => {
+            fired = false;
+            timer = setTimeout(() => { fired = true; handler(); }, 500);
+        });
+        node.addEventListener('pointerup', cancel);
+        node.addEventListener('pointerleave', cancel);
+        node.addEventListener('pointercancel', cancel);
+        node.addEventListener('contextmenu', event => event.preventDefault());
+        node.addEventListener('click', event => {
+            if (fired) { event.stopImmediatePropagation(); fired = false; }
+        }, true);
     }
 
     // ContextMenuMore.native: stop everyone's video and, where the server
@@ -1467,6 +1681,7 @@
         case 'startReactionsMuted':
             state.startReactionsMuted = value;
             prefs.soundReactions = !value;
+            notify('reactionsMuted', { value: !!value });
             conference.sendCommand(MUTE_REACTIONS_COMMAND, { attributes: { startReactionsMuted: Boolean(value) } });
             break;
         case 'chatRestricted':
@@ -1532,6 +1747,7 @@
         state.startReactionsMuted = muted;
         prefs.soundReactions = !muted;
         notify('preference', { key: 'soundReactions', value: !muted });
+        notify('reactionsMuted', { value: muted });
         moderationChanged();
     }
 
@@ -2780,6 +2996,9 @@
             render();
         });
         on(C.BREAKOUT_ROOMS_MOVE_TO_ROOM, roomId => moveToRoom(roomId));
+        const Q = JitsiMeetJS.events.connectionQuality;
+        on(Q.LOCAL_STATS_UPDATED, stats => { state.localStats = stats; });
+        on(Q.REMOTE_STATS_UPDATED, (id, stats) => { state.remoteStats.set(id, stats); });
         on(C.METADATA_UPDATED, metadata => {
             onMetadataUpdated(metadata);
             if (state.screen === 'chat') updateChatInput();
@@ -3116,6 +3335,7 @@
             sink.autoplay = true;
             track.attach(sink);
             track._sink = sink;
+            if (state.volumes.has(p.id)) sink.volume = state.volumes.get(p.id);
             $('audio-sink').appendChild(sink);
             sink.play().catch(() => {});
         }

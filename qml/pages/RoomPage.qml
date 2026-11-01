@@ -22,6 +22,8 @@ Page {
     property var returnPage
     // ModeratorSection state from the call page, null when not a moderator.
     property var moderation: null
+    // The moderator muted the reaction sounds for everyone.
+    property bool reactionsMuted: false
     property string inviteLink: page.serverAddress.replace(/\/$/, "") + "/" + encodeURIComponent(page.roomName)
 
     ShareAction {
@@ -101,6 +103,9 @@ Page {
                 break
             case "moderation":
                 page.moderation = data.state || null
+                break
+            case "reactionsMuted":
+                page.reactionsMuted = data.value
                 break
             case "preference":
                 appState.setPreference(data.key, data.value)
