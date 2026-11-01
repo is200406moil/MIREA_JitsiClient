@@ -11,7 +11,7 @@ BackgroundItem {
     property bool checked: locked || appState.preferences[preferenceKey] === true
 
     width: parent.width
-    height: Math.max(56, labels.height + 16)
+    height: Math.max(48, labels.height + 16)
     enabled: !locked
     Accessible.role: Accessible.Button
     Accessible.name: text
@@ -28,7 +28,7 @@ BackgroundItem {
             text: toggle.text
             wrapMode: Text.Wrap
             color: toggle.enabled ? AppStyle.text : AppStyle.muted
-            font.pixelSize: 16
+            font.pixelSize: 14
         }
         Label {
             visible: toggle.description.length > 0
@@ -42,17 +42,18 @@ BackgroundItem {
     Rectangle {
         id: switchTrack
         anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter }
-        width: 56
-        height: 32
+        width: 32
+        height: 14
         radius: height / 2
-        color: toggle.checked ? AppStyle.accent : "#666666"
+        color: toggle.checked ? "#719BDE" : "#666666"
         opacity: toggle.enabled ? 1 : 0.7
         Rectangle {
-            width: parent.height - 4
+            width: 20
             height: width
             radius: width / 2
             anchors.verticalCenter: parent.verticalCenter
-            x: toggle.checked ? parent.width - width - 2 : 2
+            x: toggle.checked ? parent.width - width : 0
+            Behavior on x { NumberAnimation { duration: 120 } }
             color: AppStyle.text
         }
     }

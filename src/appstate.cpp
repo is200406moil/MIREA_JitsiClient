@@ -242,7 +242,7 @@ bool AppState::saveSettings(const QString &address, bool muteAudio, bool muteVid
     return true;
 }
 
-QVariantMap AppState::saveRoom(const QString &input)
+QVariantMap AppState::saveRoom(const QString &input, bool remember)
 {
     QString name = input.trimmed();
     QString address = server().isEmpty() ? QStringLiteral("https://meet.jit.si") : server();
@@ -273,8 +273,10 @@ QVariantMap AppState::saveRoom(const QString &input)
     room["name"] = name;
     room["server"] = address;
     room["lastUsed"] = qint64(0);
-    m_rooms.prepend(room);
-    storeRooms();
+    if (remember) {
+        m_rooms.prepend(room);
+        storeRooms();
+    }
     setError(QString());
     return room;
 }
@@ -355,13 +357,18 @@ bool AppState::startMeeting(const QVariantMap &room, bool muteAudio, bool muteVi
     if (address.isEmpty() || room.value("name").toString().isEmpty()) {
         setError(tr("Не удалось определить адрес комнаты.")); return false;
     }
-    if (displayName().isEmpty()) { setError(tr("Укажите своё имя перед входом.")); return false; }
     if (!m_http.isListening() && !m_http.listen(QHostAddress::LocalHost, 0)) {
         setError(tr("Не удалось подготовить встречу. Перезапустите приложение.")); return false;
     }
     QFile file(Aurora::Application::pathTo("qml/web/conference.html").toLocalFile());
     if (!file.open(QIODevice::ReadOnly)) { setError(tr("Не удалось загрузить экран встречи.")); return false; }
     m_activeRoom = room;
+    bool remembered = false;
+    for (const QVariant &entry : m_rooms) {
+        if (entry.toMap().value("id") == room.value("id")) { remembered = true; break; }
+    }
+    if (!remembered) { m_rooms.prepend(room); storeRooms(); }
+    m_meetingStarted = QDateTime::currentMSecsSinceEpoch();
     const QUrl url(address);
     m_meetingOrigin = url.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment).toString(QUrl::StripTrailingSlash);
     m_route = "/meeting/" + QUuid::createUuid().toString().remove('{').remove('}') + "/";
@@ -396,6 +403,19 @@ bool AppState::isTrustedOrigin(const QString &origin) const
 
 void AppState::finishMeeting()
 {
+    if (m_meetingStarted > 0) {
+        for (int i = 0; i < m_rooms.size(); ++i) {
+            QVariantMap room = m_rooms.at(i).toMap();
+            if (room.value("id") == m_activeRoom.value("id")) {
+                room["lastUsed"] = m_meetingStarted;
+                room["duration"] = (QDateTime::currentMSecsSinceEpoch() - m_meetingStarted) / 1000;
+                m_rooms[i] = room;
+                storeRooms();
+                break;
+            }
+        }
+        m_meetingStarted = 0;
+    }
     m_meetingHtml.clear();
     m_activeRoom.clear();
     m_meetingUrl.clear();

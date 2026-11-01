@@ -4,6 +4,7 @@ import "../components"
 
 SilicaFlickable {
     id: view
+    property bool inMeeting: false
     property string serverError
     property bool ready: false
     contentHeight: body.height + 16
@@ -28,19 +29,19 @@ SilicaFlickable {
         BackgroundItem {
             x: 16
             width: parent.width - 32
-            height: 96
+            height: 80
             onClicked: pageStack.push(Qt.resolvedUrl("ProfilePage.qml"), {mainPage: pageStack.currentPage})
             Rectangle { anchors.fill: parent; radius: 6; color: AppStyle.raised }
             Avatar {
                 id: avatar
                 x: 16
                 anchors.verticalCenter: parent.verticalCenter
-                width: 64
+                width: 48
                 name: appState.displayName
                 imageUrl: appState.avatarUrl
             }
             Label {
-                x: 96
+                x: 80
                 anchors.verticalCenter: parent.verticalCenter
                 width: parent.width - 136
                 text: appState.displayName
@@ -77,15 +78,11 @@ SilicaFlickable {
                 color: AppStyle.text; font.pixelSize: 16
             }
         }
-        SettingSection { text: qsTr("Номера для набора") }
-        Label {
-            x: 16; width: parent.width - 32
-            text: qsTr("Адрес сервера")
-            color: AppStyle.text; font.pixelSize: 16
-        }
+        SettingSection { visible: !view.inMeeting; text: qsTr("Номера для набора") }
         Item { width: 1; height: 8 }
         JitsiField {
             id: serverField
+            visible: !view.inMeeting
             x: 16; width: parent.width - 32
             text: appState.server
             placeholderText: "https://meet.jit.si"
@@ -100,28 +97,30 @@ SilicaFlickable {
             color: AppStyle.danger; wrapMode: Text.Wrap; font.pixelSize: 14
         }
         Item { width: 1; height: 8 }
-        SettingToggle { text: qsTr("Включать упрощённый режим на ограниченном канале"); preferenceKey: "lowBandwidth" }
-        SettingToggle { text: qsTr("Начать с отключённым звуком"); preferenceKey: "audioMuted" }
-        SettingToggle { text: qsTr("Начать с отключённым видео"); preferenceKey: "videoMuted" }
+        SettingToggle { visible: !view.inMeeting; text: qsTr("Включать упрощённый режим на ограниченном канале"); preferenceKey: "lowBandwidth" }
+        SettingToggle { visible: !view.inMeeting; text: qsTr("Начать с отключённым звуком"); preferenceKey: "audioMuted" }
+        SettingToggle { visible: !view.inMeeting; text: qsTr("Начать с отключённым видео"); preferenceKey: "videoMuted" }
         SettingSection { text: qsTr("Включить звук") }
         SettingToggle { text: qsTr("Реакции на встречи"); preferenceKey: "soundReactions" }
         SettingToggle { text: qsTr("Входящее сообщение"); preferenceKey: "soundMessage" }
         SettingToggle { text: qsTr("Участник присоединился"); preferenceKey: "soundJoined" }
         SettingToggle { text: qsTr("Участник вышел"); preferenceKey: "soundLeft" }
-        SettingToggle { text: qsTr("Говорите без звука"); preferenceKey: "soundTalkMuted" }
+
         SettingToggle { text: qsTr("Участник вошёл в лобби"); preferenceKey: "soundLobby" }
         SettingSection { text: qsTr("Отображение уведомлений для") }
         SettingToggle { text: qsTr("Сообщения чата"); preferenceKey: "chatNotifications" }
-        SettingSection { text: qsTr("Дополнительные") }
-        SettingToggle { text: qsTr("Отключить режим Peer-To-Peer"); preferenceKey: "disableP2p" }
-        SettingToggle { text: qsTr("Отключить отправку отчётов о сбоях"); locked: true }
-        SettingSection { text: qsTr("Информация о сборке") }
+        SettingSection { visible: !view.inMeeting; text: qsTr("Дополнительные") }
+        SettingToggle { visible: !view.inMeeting; text: qsTr("Отключить режим Peer-To-Peer"); preferenceKey: "disableP2p" }
+        SettingToggle { visible: !view.inMeeting; text: qsTr("Отключить отправку отчётов о сбоях"); locked: true }
+        SettingSection { visible: !view.inMeeting; text: qsTr("Информация о сборке") }
         Item {
+            visible: !view.inMeeting
             width: parent.width; height: 56
             Label { x: 16; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Версия"); color: AppStyle.text; font.pixelSize: 16 }
-            Label { anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter } text: "0.1.52"; color: AppStyle.muted; font.pixelSize: 14 }
+            Label { anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter } text: "0.1.58"; color: AppStyle.muted; font.pixelSize: 14 }
         }
         Row {
+            visible: !view.inMeeting
             width: parent.width; height: 56
             Repeater {
                 model: [qsTr("Помощь"), qsTr("Условия"), qsTr("Конфиденциальность")]

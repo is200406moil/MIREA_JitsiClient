@@ -17,6 +17,7 @@ int main(int argc, char **argv)
     const QString settingsFile = dir.path() + "/client.ini";
     AppState state(nullptr, settingsFile);
     require(state.server().isEmpty(), "default server is an empty field");
+    require(!state.saveRoom("Preview only", false).isEmpty() && state.rooms().isEmpty(), "preview does not enter history");
     require(state.saveRoom("Default").value("server") == "https://meet.jit.si", "empty server uses meet.jit.si");
     state.removeRoom(state.rooms().first().toMap().value("id").toString());
     require(state.saveProfile("  Алексей  ", " ALEX@example.org "), "profile accepted");

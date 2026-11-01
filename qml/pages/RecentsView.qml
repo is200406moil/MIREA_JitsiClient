@@ -12,6 +12,13 @@ SilicaFlickable {
         id: body
         width: parent.width
         JoinRoomForm { error: view.formError; onSubmitted: view.openRoom(input) }
+        Label {
+            x: 24; width: parent.width - 48
+            visible: view.rooms.length === 0
+            topPadding: 16
+            text: qsTr("Сейчас ваш список недавно проведенных конференций пуст. По мере вашего пользования сервисом он будет пополняться.")
+            font.pixelSize: 12; color: AppStyle.muted; wrapMode: Text.Wrap; horizontalAlignment: Text.AlignHCenter
+        }
         Repeater {
             model: view.rooms
             delegate: Column {
@@ -34,7 +41,7 @@ SilicaFlickable {
                 ListItem {
                     id: row
                     width: parent.width
-                    contentHeight: Math.max(81, roomText.height + 16)
+                    contentHeight: Math.max(68, roomText.height + 16)
                     onClicked: view.openRoom(entry.room)
                     menu: ContextMenu {
                         MenuItem {
@@ -50,7 +57,7 @@ SilicaFlickable {
                         id: initials
                         x: 16
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 65
+                        width: 54
                         height: width
                         radius: width/2
                         color: AppStyle.avatarColor(entry.room.server === "https://meet.jit.si" ? entry.room.name : entry.room.server)
@@ -82,6 +89,13 @@ SilicaFlickable {
                             color: AppStyle.muted
                             font.pixelSize: 14
                             truncationMode: TruncationMode.Fade
+                        }
+                        Label {
+                            width: parent.width
+                            visible: entry.room.duration !== undefined
+                            text: Math.floor((entry.room.duration || 0) / 60) + ":" + ("0" + ((entry.room.duration || 0) % 60)).slice(-2)
+                            color: AppStyle.muted
+                            font.pixelSize: 12
                         }
                         Label {
                             width: parent.width

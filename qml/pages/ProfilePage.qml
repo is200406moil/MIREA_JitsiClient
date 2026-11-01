@@ -43,29 +43,17 @@ Page {
             Item { width: 1; height: 16 }
             Avatar {
                 anchors.horizontalCenter: parent.horizontalCenter
-                width: 64
+                width: 48
                 name: nameField.text
                 imageUrl: appState.avatarUrl
             }
-            Item { width: 1; height: 40 }
-            Label {
-                x: 16; width: parent.width-32
-                text: qsTr("Отображаемое имя")
-                color: AppStyle.text; font.pixelSize: 16
-            }
-            Item { width: 1; height: 8 }
+            Item { width: 1; height: 48 }
             JitsiField {
                 id: nameField; x: 16; width: parent.width-32
-                text: appState.displayName; placeholderText: qsTr("Отображаемое имя")
+                text: appState.displayName; placeholderText: qsTr("Например: Иван Иванов")
                 onAccepted: emailField.focusEditor()
             }
             Item { width: 1; height: 24 }
-            Label {
-                x: 16; width: parent.width-32
-                text: "Email"
-                color: AppStyle.text; font.pixelSize: 16
-            }
-            Item { width: 1; height: 8 }
             JitsiField {
                 id: emailField; x: 16; width: parent.width-32
                 text: appState.email; placeholderText: "email@example.com"
@@ -75,7 +63,7 @@ Page {
             Label {
                 x: 16; width: parent.width-32
                 text: qsTr("Если ваш email связан с аккаунтом Gravatar, мы будем использовать его в качестве изображения вашего профиля.")
-                color: AppStyle.muted; font.pixelSize: 14; wrapMode: Text.Wrap
+                color: AppStyle.muted; font.pixelSize: 12; wrapMode: Text.Wrap
             }
             Label {
                 x: 16; width: parent.width-32

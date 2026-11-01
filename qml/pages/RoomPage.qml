@@ -34,6 +34,11 @@ Page {
     property bool moreOpen: false
     property bool chatOpen: false
     property bool participantsOpen: false
+    property bool peopleMenuOpen: false
+    onParticipantsOpenChanged: {
+        if (!participantsOpen) peopleMenuOpen = false
+        else webView.runJavaScript("window.auroraMeeting && window.auroraMeeting.refreshParticipants()", function(result) {}, function(error) {})
+    }
     property bool settingsOpen: false
     property bool whiteboardOpen: false
     property bool audioOnly: false
@@ -42,6 +47,7 @@ Page {
     property string selfId: ""
     property bool moderator: false
     property var previousPage
+    property var returnPage
     property string inviteLink: page.serverAddress.replace(/\/$/, "") + "/" + encodeURIComponent(page.roomName)
     ShareAction {
         id: inviteAction
@@ -60,6 +66,15 @@ Page {
         if (!value || !apiReady) return
         webView.runJavaScript("window.auroraMeeting && window.auroraMeeting.sendChatMessage(" + JSON.stringify(value) + ")",
             function(result) {}, function(error) {})
+    }
+    function updateParticipant(id, changes) {
+        participants = participants.map(function(person) {
+            if (person.id !== id) return person
+            var updated = {}
+            for (var key in person) updated[key] = person[key]
+            for (var field in changes) updated[field] = changes[field]
+            return updated
+        })
     }
     function muteEveryone(mediaType) {
         webView.runJavaScript("window.auroraMeeting && window.auroraMeeting.muteEveryone(" + JSON.stringify(mediaType) + ")",
@@ -129,7 +144,7 @@ Page {
         if (apiReady) command("hangup")
         closeTimer.start()
     }
-    Timer { id: closeTimer; interval: 1000; onTriggered: pageStack.pop() }
+    Timer { id: closeTimer; interval: 1000; onTriggered: { if (page.returnPage) pageStack.pop(page.returnPage); else pageStack.pop() } }
     Timer {
         interval: 45000
         running: !page.joined && !page.leaving
@@ -189,6 +204,7 @@ Page {
                 }
                 break
             case "participantCount": page.participantCount = data.count; break
+            case "participantsSnapshot": page.participants = data.people || []; break
             case "participantJoined":
                 var people = page.participants.slice()
                 people.push({id: data.id, name: data.displayName || data.id})
@@ -197,7 +213,17 @@ Page {
             case "participantLeft":
                 page.participants = page.participants.filter(function(person) { return person.id !== data.id })
                 break
-            case "participantRoleChanged": page.moderator = data.role === "moderator"; break
+            case "participantRoleChanged":
+                if (data.id === page.selfId) page.moderator = data.role === "moderator"
+                else page.updateParticipant(data.id, {moderator: data.role === "moderator"})
+                break
+            case "avatarChanged": page.updateParticipant(data.id, {avatarURL: data.avatarURL}); break
+            case "displayNameChange": page.updateParticipant(data.id, {name: data.displayname}); break
+            case "participantMuted":
+                var media = {}
+                media[data.mediaType === "video" ? "videoMuted" : "audioMuted"] = data.isMuted
+                page.updateParticipant(data.participantId, media)
+                break
             case "incomingMessage":
                 var messages = page.chatMessages.slice()
                 messages.push({nick: data.nick || "", message: data.message || ""})
@@ -463,6 +489,27 @@ Page {
             }
             CallControl {
                 height: 80
+                text: qsTr("Начать трансляцию с экрана")
+                iconName: "screenshare"
+                enabled: page.joined && !page.leaving
+                onClicked: page.command("toggleShareScreen")
+            }
+            CallControl {
+                height: 80
+                text: qsTr("Поднять руку")
+                iconName: "hand"
+                enabled: page.joined && !page.leaving
+                onClicked: page.command("toggleRaiseHand")
+            }
+            CallControl {
+                height: 80
+                text: qsTr("Общий план")
+                iconName: "tile-view"
+                enabled: page.joined && !page.leaving
+                onClicked: page.command("toggleTileView")
+            }
+            CallControl {
+                height: 80
                 text: qsTr("Ещё")
                 iconName: "dots-horizontal"
                 enabled: page.joined && !page.leaving
@@ -632,7 +679,7 @@ Page {
     }
     Rectangle {
         id: moreSheet
-        anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+        anchors { left: parent.left; leftMargin: page.width * 0.083; right: parent.right; rightMargin: page.width * 0.083; bottom: parent.bottom }
         z: 81
         visible: page.moreOpen
         height: Math.min(page.height * 0.79, sheetContent.height + 16)
@@ -648,13 +695,11 @@ Page {
                 Repeater {
                     model: [
                         {label: qsTr("Упрощенный режим"), icon: "car", command: "setLowBandwidthMode"},
-                        {label: qsTr("Выключить видео (экономичный режим)"), icon: "video-off", command: "audioOnly"},
+                        {label: page.audioOnly ? qsTr("Включить видео (стандартный режим)") : qsTr("Выключить видео (экономичный режим)"), icon: "video-off", command: "audioOnly"},
                         {label: qsTr("Настройки безопасности"), icon: "security-off", command: ""},
                         {label: qsTr("Начать трансляцию"), icon: "share", command: ""},
                         {label: qsTr("Показать интерактивную доску"), icon: "whiteboard", command: "toggleWhiteboard"},
                         {label: qsTr("Видео YouTube"), icon: "video", command: ""},
-                        {label: qsTr("Общий план"), icon: "tile-view", command: "toggleTileView"},
-                        {label: qsTr("Начать трансляцию с экрана"), icon: "screenshare", command: ""},
                         {label: qsTr("Статистика"), icon: "meter", command: ""},
                         {label: qsTr("Настройки"), icon: "gear", command: "settings"}
                     ]
@@ -691,30 +736,6 @@ Page {
                         }
                     }
                 }
-                Row {
-                    width: parent.width
-                    height: 55
-                    spacing: 8
-                    Repeater {
-                        model: ["👍", "👏", "😀", "😮", "😞", "😐", "💖"]
-                        delegate: BackgroundItem {
-                            width: (sheetContent.width - 48) / 7; height: 55
-                            enabled: false
-                            Label { anchors.centerIn: parent; text: modelData; font.pixelSize: 30 }
-                        }
-                    }
-                }
-                BackgroundItem {
-                    x: 70
-                    width: parent.width - 140
-                    height: 54
-                    Rectangle { anchors.fill: parent; radius: 6; color: "#E4E4E4" }
-                    Label { anchors.centerIn: parent; text: qsTr("✋ Поднять руку"); color: "#111111"; font.pixelSize: 27; font.bold: true }
-                    onClicked: {
-                        page.moreOpen = false
-                        page.command("toggleRaiseHand")
-                    }
-                }
             }
             VerticalScrollDecorator {}
         }
@@ -733,11 +754,11 @@ Page {
             id: chatHeader
             width: parent.width; height: 56
             BackgroundItem {
-                x: 0; width: 104; height: parent.height
-                Label { anchors.centerIn: parent; text: qsTr("Закрыть"); color: AppStyle.accent; font.pixelSize: 16 }
+                x: 0; width: 40; height: parent.height
+                Label { anchors.centerIn: parent; text: "×"; color: AppStyle.text; font.pixelSize: 24 }
                 onClicked: page.chatOpen = false
             }
-            Label { anchors.centerIn: parent; text: "Chat and Чат"; color: AppStyle.text; font.pixelSize: 18; font.bold: true }
+            Label { x: 40; anchors.verticalCenter: parent.verticalCenter; text: "Chat and Чат"; color: AppStyle.text; font.pixelSize: 16; font.bold: true }
         }
         Row {
             id: chatTabs
@@ -785,7 +806,7 @@ Page {
             anchors.centerIn: parent
             width: parent.width - 40
             text: qsTr("В конференции пока нет никаких сообщений. Начните разговор!")
-            color: AppStyle.muted; font.pixelSize: 15; font.bold: true
+            color: AppStyle.muted; font.pixelSize: 12
             horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
         }
         Row {
@@ -811,7 +832,7 @@ Page {
             anchors.centerIn: parent
             width: parent.width - 40
             text: qsTr("На собрании еще нет опросов. Начать опрос здесь!")
-            color: AppStyle.muted; font.pixelSize: 15; font.bold: true
+            color: AppStyle.muted; font.pixelSize: 12
             horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
         }
         BackgroundItem {
@@ -836,28 +857,28 @@ Page {
             id: peopleHeader
             width: parent.width; height: 56
             BackgroundItem {
-                width: 104; height: parent.height
-                Label { anchors.centerIn: parent; text: qsTr("Закрыть"); color: AppStyle.accent; font.pixelSize: 16 }
+                width: 40; height: parent.height
+                Label { anchors.centerIn: parent; text: "×"; color: AppStyle.text; font.pixelSize: 24 }
                 onClicked: page.participantsOpen = false
             }
-            Label { anchors.centerIn: parent; text: qsTr("Участники"); color: AppStyle.text; font.pixelSize: 18; font.bold: true }
+            Label { x: 40; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Участники"); color: AppStyle.text; font.pixelSize: 16; font.bold: true }
         }
         Label {
             id: peopleHeading
-            x: 16; y: peopleHeader.height + 42
+            x: 16; y: peopleHeader.height + 24
             text: qsTr("Список участников (%1)").arg(page.participantCount)
-            color: AppStyle.text; font.pixelSize: 16; font.bold: true
+            color: AppStyle.text; font.pixelSize: 14; font.bold: true
         }
         AppButton {
             id: inviteButton
-            x: 32; width: parent.width - 64
-            anchors.top: peopleHeading.bottom; anchors.topMargin: 20
+            x: 20; width: parent.width - 40
+            anchors.top: peopleHeading.bottom; anchors.topMargin: 16
             text: qsTr("Пригласить")
             onClicked: page.invite()
         }
         JitsiField {
             id: peopleSearch
-            x: 32; width: parent.width - 64
+            x: 20; width: parent.width - 40
             anchors.top: inviteButton.bottom; anchors.topMargin: 8
             placeholderText: qsTr("Поиск участников")
             centered: true
@@ -869,16 +890,23 @@ Page {
                 id: peopleList
                 width: parent.width
                 Repeater {
-                    model: (page.joined ? [{name: appState.displayName, self: true}] : []).concat(page.participants)
+                    model: page.participants.concat(page.joined ? [{name: appState.displayName, self: true, moderator: page.moderator, audioMuted: page.audioMuted, videoMuted: page.videoMuted}] : [])
                     delegate: Item {
                         width: peopleList.width; height: 58
                         visible: !peopleSearch.text || modelData.name.toLowerCase().indexOf(peopleSearch.text.toLowerCase()) >= 0
-                        Avatar { x: 24; anchors.verticalCenter: parent.verticalCenter; width: 36; name: modelData.name; imageUrl: modelData.self ? appState.avatarUrl : "" }
+                        Avatar { x: 24; anchors.verticalCenter: parent.verticalCenter; width: 24; name: modelData.name; imageUrl: modelData.self ? appState.avatarUrl : modelData.avatarURL || "" }
                         Column {
-                            x: 72; anchors.verticalCenter: parent.verticalCenter; spacing: 2
-                            Label { text: modelData.name + (modelData.self ? qsTr(" (вы)") : ""); color: AppStyle.text; font.pixelSize: 15 }
-                            Label { visible: modelData.self && page.moderator; text: qsTr("Модератор"); color: AppStyle.muted; font.pixelSize: 13 }
+                            x: 56; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                            Label { text: modelData.name + (modelData.self ? qsTr(" (вы)") : ""); color: AppStyle.text; font.pixelSize: 12 }
+                            Label { visible: !!modelData.moderator; text: qsTr("Модератор"); color: AppStyle.muted; font.pixelSize: 12 }
                         }
+                        Row {
+                            anchors { right: parent.right; rightMargin: 20; verticalCenter: parent.verticalCenter }
+                            spacing: 8
+                            Icon { width: 16; height: 16; source: Qt.resolvedUrl("../icons/" + (modelData.videoMuted ? "video-off" : "video") + ".svg"); color: AppStyle.text }
+                            Icon { width: 16; height: 16; source: Qt.resolvedUrl("../icons/" + (modelData.audioMuted ? "mic-slash" : "mic") + ".svg"); color: AppStyle.text }
+                        }
+                        Rectangle { x: 24; width: parent.width - 48; height: 1; anchors.bottom: parent.bottom; color: AppStyle.raised }
                     }
                 }
             }
@@ -898,7 +926,21 @@ Page {
                 width: 48; height: 48; enabled: page.moderator
                 Rectangle { anchors.fill: parent; color: page.moderator ? "#E4E4E4" : AppStyle.field; radius: 6 }
                 Icon { anchors.centerIn: parent; source: Qt.resolvedUrl("../icons/dots-horizontal.svg"); width: 24; height: 24; color: "#111111" }
-                onClicked: page.muteEveryone("video")
+                onClicked: page.peopleMenuOpen = true
+            }
+        }
+        Rectangle {
+            anchors.fill: parent
+            visible: page.peopleMenuOpen
+            color: "#99000000"
+            MouseArea { anchors.fill: parent; onClicked: page.peopleMenuOpen = false }
+            BackgroundItem {
+                anchors { left: parent.left; leftMargin: 24; right: parent.right; rightMargin: 24; bottom: parent.bottom }
+                height: 48
+                Rectangle { anchors.fill: parent; color: AppStyle.raised; radius: 8 }
+                Icon { x: 12; anchors.verticalCenter: parent.verticalCenter; width: 20; height: 20; source: Qt.resolvedUrl("../icons/video-off.svg"); color: AppStyle.text }
+                Label { x: 44; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Выключить у всех камеру"); font.pixelSize: 14; color: AppStyle.text }
+                onClicked: { page.peopleMenuOpen = false; page.muteEveryone("video") }
             }
         }
     }
@@ -914,13 +956,14 @@ Page {
             id: meetingSettingsHeader
             width: parent.width; height: 56
             BackgroundItem {
-                width: 104; height: parent.height
-                Label { anchors.centerIn: parent; text: qsTr("Закрыть"); color: AppStyle.accent; font.pixelSize: 16 }
+                width: 40; height: parent.height
+                Label { anchors.centerIn: parent; text: "×"; color: AppStyle.text; font.pixelSize: 24 }
                 onClicked: page.settingsOpen = false
             }
-            Label { anchors.centerIn: parent; text: qsTr("Настройки"); color: AppStyle.text; font.pixelSize: 18; font.bold: true }
+            Label { x: 40; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Настройки"); color: AppStyle.text; font.pixelSize: 16; font.bold: true }
         }
         SettingsView {
+            inMeeting: true
             anchors { top: meetingSettingsHeader.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
         }
     }

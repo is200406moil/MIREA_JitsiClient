@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
+async function main() {
 const html = fs.readFileSync(require('node:path').join(__dirname, '../qml/web/conference.html'), 'utf8');
 const config = { server: 'https://meet.example.org', room: 'Team meeting', displayName: 'Алексей', email: '', avatarURL: '', audioMuted: true, videoMuted: false,
     preferences: {language: 'en', hideSelfView: true, lowBandwidth: true, disableP2p: true, chatNotifications: false,
@@ -17,6 +18,11 @@ function API(domain, opts) {
     this.addListener = (name, fn) => { listeners[name] = fn; };
     this.executeCommand = (name, ...args) => { commands.push(name); commandArguments.push(args); };
     this.getAvailableDevices = () => Promise.resolve({ audioInput: [{}, {}], videoInput: [] });
+    this.getRoomsInfo = () => Promise.resolve({rooms: [{participants: [
+        {id: 'self', role: 'moderator'},
+        {id: 'other', displayName: 'Другой', role: 'moderator', audioMuted: true, videoMuted: true}
+    ]}]});
+    this.getAvatarURL = id => 'https://example.org/' + id + '.png';
     this.dispose = () => { disposed = true; };
 }
 const context = {
@@ -81,6 +87,20 @@ assert.equal(context.window.auroraMeeting.openWhiteboard(), true);
 assert.equal(commands.at(-1), 'toggleWhiteboard', 'already hidden filmstrip stays hidden');
 assert.equal(context.window.auroraMeeting.closeWhiteboard(), true);
 assert.equal(commands.at(-1), 'toggleWhiteboard', 'user-hidden filmstrip stays hidden after closing');
+assert.equal(context.window.auroraMeeting.command('toggleShareScreen'), true);
+assert.equal(commands.at(-1), 'toggleShareScreen');
+listeners.avatarChanged({id: 'other', avatarURL: 'https://example.org/avatar.png'});
+assert.equal(events.at(-1).name, 'avatarChanged');
+assert.equal(events.at(-1).data.avatarURL, 'https://example.org/avatar.png');
+listeners.participantMuted({participantId: 'other', mediaType: 'video', isMuted: true});
+assert.equal(events.at(-1).data.isMuted, true);
+assert.equal(context.window.auroraMeeting.refreshParticipants(), true);
+await Promise.resolve();
+const snapshot = events.find(event => event.name === 'participantsSnapshot');
+assert.equal(snapshot.data.people.length, 1, 'exclude self from remote participant snapshot');
+assert.equal(snapshot.data.people[0].avatarURL, 'https://example.org/other.png');
+assert.equal(snapshot.data.people[0].moderator, true);
+assert.equal(snapshot.data.people[0].audioMuted, true);
 listeners.videoConferenceLeft();
 assert.equal(events.at(-1).data.count, 0);
 context.onHide();
@@ -98,3 +118,5 @@ Promise.resolve().then(() => {
     assert.deepEqual(Object.keys(inventory.data).sort(), ['audioInput', 'videoInput']);
     console.log('PASS: Jitsi configuration, native bridge events, device inventory, participant count, commands, disposal');
 });
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });

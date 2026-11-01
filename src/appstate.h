@@ -41,7 +41,7 @@ public:
     Q_INVOKABLE bool saveSettings(const QString &server, bool audioMuted, bool videoMuted);
     Q_INVOKABLE bool setPreference(const QString &key, const QVariant &value);
     Q_INVOKABLE QString roomSection(qint64 timestamp) const;
-    Q_INVOKABLE QVariantMap saveRoom(const QString &input);
+    Q_INVOKABLE QVariantMap saveRoom(const QString &input, bool remember = true);
     Q_INVOKABLE void removeRoom(const QString &id);
     Q_INVOKABLE void importLegacy(const QString &json, const QString &name);
     Q_INVOKABLE bool startMeeting(const QVariantMap &room, bool muteAudio, bool muteVideo);
@@ -77,6 +77,7 @@ private:
     QTcpServer m_http;
     QVariantList m_rooms;
     QVariantMap m_activeRoom;
+    qint64 m_meetingStarted = 0;
     QByteArray m_meetingHtml;
     QString m_route;
     QString m_meetingUrl;

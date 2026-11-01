@@ -10,7 +10,7 @@ BackgroundItem {
     property bool destructive: false
     property bool selected: false
     width: parent ? parent.width : implicitWidth
-    height: Math.max(48, buttonText.implicitHeight + 24)
+    height: Math.max(40, buttonText.implicitHeight + 20)
     Accessible.role: Accessible.Button
     Accessible.name: text
     Rectangle {
@@ -24,24 +24,23 @@ BackgroundItem {
     }
     Row {
         id: buttonRow
-        width: control.width - 2 * Theme.paddingLarge
+        width: control.width - 24
         anchors.centerIn: parent
-        spacing: Theme.paddingMedium
+        spacing: 8
         Icon {
             anchors.verticalCenter: parent.verticalCenter
             visible: control.iconName.length > 0
-            width: Theme.iconSizeSmall
+            width: 20
             height: width
             source: control.iconName.length ? Qt.resolvedUrl("../icons/" + control.iconName + ".svg") : ""
             color: AppStyle.text
         }
         Label {
             id: buttonText
-            width: buttonRow.width - (control.iconName.length ? Theme.iconSizeSmall + buttonRow.spacing : 0)
+            width: buttonRow.width - (control.iconName.length ? 20 + buttonRow.spacing : 0)
             color: AppStyle.text
             text: control.text
-            font.pixelSize: 16
-            font.bold: true
+            font.pixelSize: 12
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.Wrap
         }

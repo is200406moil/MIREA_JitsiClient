@@ -8,7 +8,7 @@ BackgroundItem {
     property string iconName
     property bool checked: false
     property bool destructive: false
-    width: parent.width / 5
+    width: parent.width / 8
     height: Theme.itemSizeLarge
     Accessible.role: Accessible.Button
     Accessible.name: text

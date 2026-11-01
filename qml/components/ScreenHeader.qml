@@ -37,8 +37,9 @@ Item {
             width: parent.width
             text: header.title
             color: AppStyle.text
-            font.pixelSize: 18
-            horizontalAlignment: Text.AlignHCenter
+            font.pixelSize: 16
+            font.bold: true
+            horizontalAlignment: Text.AlignLeft
             wrapMode: Text.Wrap
         }
         Label {
@@ -47,7 +48,7 @@ Item {
             text: header.subtitle
             color: AppStyle.muted
             font.pixelSize: 12
-            horizontalAlignment: Text.AlignHCenter
+            horizontalAlignment: Text.AlignLeft
             truncationMode: TruncationMode.Fade
         }
     }

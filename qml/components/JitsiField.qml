@@ -13,7 +13,7 @@ Rectangle {
     function focusEditor() { editor.forceActiveFocus() }
 
     width: parent ? parent.width : 240
-    height: 48
+    height: 40
     radius: 6
     color: AppStyle.field
     border.width: editor.activeFocus ? 2 : 0
@@ -27,7 +27,7 @@ Rectangle {
         color: AppStyle.text
         selectionColor: AppStyle.accent
         selectedTextColor: AppStyle.text
-        font.pixelSize: 16
+        font.pixelSize: 14
         clip: true
         selectByMouse: true
         onAccepted: field.accepted()
@@ -38,7 +38,7 @@ Rectangle {
         horizontalAlignment: field.centered ? Text.AlignHCenter : Text.AlignLeft
         text: field.placeholderText
         color: AppStyle.muted
-        font.pixelSize: 16
+        font.pixelSize: 14
         elide: Text.ElideRight
         visible: editor.text.length === 0 && !editor.activeFocus
     }

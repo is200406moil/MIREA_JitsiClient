@@ -12,9 +12,9 @@ Page {
     ConfigurationValue { id: legacyName; key: "/apps/ru.vkr.JitsiAuroraPrototype/displayName"; defaultValue: "" }
     Component.onCompleted: appState.importLegacy(legacyRooms.value, legacyName.value)
     function prepareRoom(input) {
-        var room = typeof input === "string" ? appState.saveRoom(input) : input
+        var room = typeof input === "string" ? appState.saveRoom(input, false) : input
         if (pane.item && pane.item.formError !== undefined) pane.item.formError = room.id ? "" : appState.lastError
-        if (room.id) pageStack.push(Qt.resolvedUrl("PreJoinPage.qml"), {room:room})
+        if (room.id) pageStack.push(Qt.resolvedUrl("PreJoinPage.qml"), {room:room, mainPage:page})
     }
     Item {
         id: viewport

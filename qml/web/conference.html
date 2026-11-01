@@ -31,6 +31,7 @@
         if (preferences[key] === false) disabledSounds.push(soundOptions[key]);
     });
     let api = null;
+    let localParticipantId = '';
     let participants = new Set();
     let participantsPaneVisible = false;
     let filmstripVisible = true;
@@ -63,8 +64,28 @@
         notify('scriptError');
     }
     window.auroraMeeting = {
+        refreshParticipants: function () {
+            if (!api || typeof api.getRoomsInfo !== 'function') return false;
+            const meetingApi = api;
+            meetingApi.getRoomsInfo().then(function (data) {
+                if (api !== meetingApi) return;
+                const room = (data.rooms || []).find(function (item) {
+                    return (item.participants || []).some(function (person) { return person.id === localParticipantId; });
+                });
+                if (!room) return;
+                notify('participantsSnapshot', {people: (room.participants || []).filter(function (person) {
+                    return person.id !== localParticipantId && !person.isHidden;
+                }).map(function (person) {
+                    let avatar = person.avatarUrl || person.avatarURL || '';
+                    if (!avatar && typeof api.getAvatarURL === 'function') avatar = api.getAvatarURL(person.id) || '';
+                    return {id: person.id, name: person.displayName || person.id, avatarURL: avatar,
+                        moderator: person.role === 'moderator', audioMuted: person.audioMuted, videoMuted: person.videoMuted};
+                })});
+            }).catch(function () {});
+            return true;
+        },
         command: function (name) {
-            if (!api || !['toggleAudio', 'toggleVideo', 'toggleChat', 'hangup', 'toggleParticipantsPane', 'toggleTileView', 'toggleRaiseHand', 'toggleCamera', 'setLowBandwidthMode'].includes(name)) return false;
+            if (!api || !['toggleAudio', 'toggleVideo', 'toggleChat', 'hangup', 'toggleParticipantsPane', 'toggleTileView', 'toggleRaiseHand', 'toggleCamera', 'toggleShareScreen', 'setLowBandwidthMode'].includes(name)) return false;
             if (name === 'toggleParticipantsPane') {
                 participantsPaneVisible = !participantsPaneVisible;
                 api.executeCommand(name, participantsPaneVisible);
@@ -160,7 +181,7 @@
             });
             notify('apiReady');
             ['audioMuteStatusChanged', 'videoMuteStatusChanged', 'passwordRequired',
-             'readyToClose', 'cameraError', 'micError', 'errorOccurred', 'videoAvailabilityChanged', 'participantRoleChanged', 'whiteboardStatusChanged'].forEach(function (name) {
+             'readyToClose', 'cameraError', 'micError', 'errorOccurred', 'videoAvailabilityChanged', 'participantRoleChanged', 'avatarChanged', 'displayNameChange', 'participantMuted', 'whiteboardStatusChanged'].forEach(function (name) {
                 api.addListener(name, function (data) { notify(name, data); });
             });
             api.addListener('filmstripDisplayChanged', function (data) {
@@ -169,6 +190,7 @@
             api.addListener('videoAvailabilityChanged', checkDevices);
             api.addListener('audioAvailabilityChanged', checkDevices);
             api.addListener('videoConferenceJoined', function (data) {
+                localParticipantId = data.id;
                 document.getElementById('meeting').classList.add('in-call');
                 if (preferences.lowBandwidth === true) {
                     try { api.executeCommand('setLowBandwidthMode', true); }

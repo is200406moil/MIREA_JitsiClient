@@ -11,7 +11,7 @@ Rectangle {
     width: Theme.itemSizeLarge
     height: width
     radius: width / 2
-    color: AppStyle.avatarColor(avatar.name)
+    color: avatar.name.trim() ? AppStyle.avatarColor(avatar.name) : "#494949"
     clip: true
     Label {
         anchors.centerIn: parent
@@ -19,8 +19,9 @@ Rectangle {
         color: AppStyle.text
         font.pixelSize: avatar.width * 0.45
         font.weight: Font.Light
-        visible: photo.status !== Image.Ready
+        visible: avatar.name.trim().length > 0 && photo.status !== Image.Ready
     }
+    Image { anchors.centerIn: parent; width: parent.width * 0.8; height: width; source: "../icons/person.svg"; visible: !avatar.name.trim() && photo.status !== Image.Ready }
     Image {
         id: photo
         anchors.fill: parent
