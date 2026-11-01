@@ -117,7 +117,7 @@ SilicaFlickable {
             visible: !view.inMeeting
             width: parent.width; height: 56
             Label { x: 16; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Версия"); color: AppStyle.text; font.pixelSize: 16 }
-            Label { anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter } text: "0.1.58"; color: AppStyle.muted; font.pixelSize: 14 }
+            Label { anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter } text: "0.1.60"; color: AppStyle.muted; font.pixelSize: 14 }
         }
         Row {
             visible: !view.inMeeting

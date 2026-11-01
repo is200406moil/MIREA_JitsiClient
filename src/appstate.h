@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QNetworkAccessManager>
+#include <QHash>
 #include <QSettings>
 #include <QTcpServer>
 #include <QVariantList>
@@ -79,6 +80,8 @@ private:
     QVariantMap m_activeRoom;
     qint64 m_meetingStarted = 0;
     QByteArray m_meetingHtml;
+    // Organizer tokens per server host, kept for the lifetime of the app.
+    QHash<QString, QString> m_tokens;
     QString m_route;
     QString m_meetingUrl;
     QString m_meetingOrigin;

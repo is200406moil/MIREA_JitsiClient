@@ -360,7 +360,7 @@ bool AppState::startMeeting(const QVariantMap &room, bool muteAudio, bool muteVi
     if (!m_http.isListening() && !m_http.listen(QHostAddress::LocalHost, 0)) {
         setError(tr("Не удалось подготовить встречу. Перезапустите приложение.")); return false;
     }
-    QFile file(Aurora::Application::pathTo("qml/web/conference.html").toLocalFile());
+    QFile file(Aurora::Application::pathTo("qml/call/index.html").toLocalFile());
     if (!file.open(QIODevice::ReadOnly)) { setError(tr("Не удалось загрузить экран встречи.")); return false; }
     m_activeRoom = room;
     bool remembered = false;
@@ -369,24 +369,31 @@ bool AppState::startMeeting(const QVariantMap &room, bool muteAudio, bool muteVi
     }
     if (!remembered) { m_rooms.prepend(room); storeRooms(); }
     m_meetingStarted = QDateTime::currentMSecsSinceEpoch();
-    const QUrl url(address);
-    m_meetingOrigin = url.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment).toString(QUrl::StripTrailingSlash);
+    // The call page runs on the loopback server; camera and microphone
+    // requests are accepted only from this origin.
+    m_meetingOrigin = QString("http://127.0.0.1:%1").arg(m_http.serverPort());
     m_route = "/meeting/" + QUuid::createUuid().toString().remove('{').remove('}') + "/";
-    m_meetingUrl = QString("http://127.0.0.1:%1%2").arg(m_http.serverPort()).arg(m_route);
+    m_meetingUrl = m_meetingOrigin + m_route;
+    const QString roomName = room.value("name").toString();
     QJsonObject config;
     config["server"] = address;
-    config["room"] = room.value("name").toString();
+    config["room"] = roomName;
     config["displayName"] = displayName();
     config["email"] = email();
     config["avatarURL"] = avatarUrl();
     config["audioMuted"] = muteAudio;
     config["videoMuted"] = muteVideo;
+    config["language"] = preferences().value("language").toString();
+    config["jwt"] = m_tokens.value(QUrl(address).host());
+    config["insecureRoomName"] = roomName.trimmed().size() <= 8;
+    config["inviteUrl"] = address + "/" + QString::fromLatin1(QUrl::toPercentEncoding(roomName));
+    config["securityHelpUrl"] = QStringLiteral("https://jitsi.github.io/handbook/docs/faq/#how-can-i-protect-my-meetings-with-jitsi");
     config["preferences"] = QJsonObject::fromVariantMap(preferences());
     QByteArray json = QJsonDocument(config).toJson(QJsonDocument::Compact);
     json.replace("<", "\\u003c");
     json.replace(">", "\\u003e");
     json.replace("&", "\\u0026");
-    m_meetingHtml = file.readAll().replace("__MEETING_CONFIG__", json);
+    m_meetingHtml = file.readAll().replace("__CALL_CONFIG__", json);
     setError(QString());
     emit meetingChanged();
     return true;
@@ -492,10 +499,29 @@ void AppState::handleRequest(QTcpSocket *socket)
         && origin == "http://" + expectedHost) {
         const QJsonObject event = QJsonDocument::fromJson(buffer.mid(split + 4, contentLength)).object();
         const QString name = event.value("name").toString();
-        if (name == "videoConferenceJoined") markJoined();
+        const QVariantMap data = event.value("data").toObject().toVariantMap();
+        if (name == "joined") markJoined();
+        if (name == "token") m_tokens.insert(QUrl(m_activeRoom.value("server").toString()).host(), data.value("jwt").toString());
         sendResponse(socket, 200, "application/json", "{}");
-        emit conferenceEvent(name, event.value("data").toObject().toVariantMap());
+        emit conferenceEvent(name, data);
         return;
+    }
+    if (request[0] == "GET" && request[1].startsWith(route)) {
+        // Static files of the call page (qml/call). Only plain relative
+        // paths inside that directory are served.
+        const QString path = QString::fromUtf8(request[1].mid(route.size()));
+        static const QRegularExpression allowed("^[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+)*\\.(js|css|svg|json)$");
+        if (allowed.match(path).hasMatch() && !path.contains("..")) {
+            QFile asset(Aurora::Application::pathTo("qml/call/" + path).toLocalFile());
+            if (asset.open(QIODevice::ReadOnly)) {
+                static const QHash<QString, QByteArray> types {
+                    {"js", "text/javascript; charset=utf-8"}, {"css", "text/css; charset=utf-8"},
+                    {"svg", "image/svg+xml"}, {"json", "application/json; charset=utf-8"}
+                };
+                sendResponse(socket, 200, types.value(path.section('.', -1)), asset.readAll());
+                return;
+            }
+        }
     }
     sendResponse(socket, 404, "text/plain", "Not found");
 }
