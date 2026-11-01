@@ -20,6 +20,8 @@ Page {
     property bool leaving: false
     property var previousPage
     property var returnPage
+    // ModeratorSection state from the call page, null when not a moderator.
+    property var moderation: null
     property string inviteLink: page.serverAddress.replace(/\/$/, "") + "/" + encodeURIComponent(page.roomName)
 
     ShareAction {
@@ -94,7 +96,14 @@ Page {
                 }
                 break
             case "openSettings":
-                pageStack.push(Qt.resolvedUrl("MeetingSettingsPage.qml"), {title: data.title})
+                page.moderation = data.moderation || null
+                pageStack.push(Qt.resolvedUrl("MeetingSettingsPage.qml"), {title: data.title, roomPage: page})
+                break
+            case "moderation":
+                page.moderation = data.state || null
+                break
+            case "preference":
+                appState.setPreference(data.key, data.value)
                 break
             case "closeWhiteboard":
                 if (page.whiteboardPage) pageStack.pop(page)
@@ -115,6 +124,10 @@ Page {
     }
 
     // Called by OrganizerLoginPage when the sign-in page returns a token.
+    function setModeration(key, value) {
+        callJs("window.auroraCall.setModeration(" + JSON.stringify(key) + "," + (value ? "true" : "false") + ")")
+    }
+
     function setToken(jwt) {
         callJs("window.auroraCall.setToken(" + JSON.stringify(jwt) + ")")
     }

@@ -9,6 +9,7 @@ Page {
     id: page
     allowedOrientations: Orientation.All
     property string title
+    property var roomPage
 
     Item {
         width: page.width / AppStyle.dp
@@ -25,6 +26,7 @@ Page {
         }
         SettingsView {
             inMeeting: true
+            roomPage: page.roomPage
             anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
             clip: true
         }

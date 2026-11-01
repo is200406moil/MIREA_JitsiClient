@@ -214,6 +214,12 @@
         polls: new Map(),
         pollsUnread: 0,
         pollDraft: null,
+        followMe: false,
+        followMeRecorder: false,
+        followMeModerator: '',
+        followMeModeratorRecorder: false,
+        startReactionsMuted: false,
+        joinedAt: 0,
         privateRecipient: null,
         knocking: new Map(),
         lobbyEnabled: false,
@@ -554,6 +560,7 @@
     function togglePin(id) {
         if (id === state.localId || id === 'local') return;
         state.pinnedId = state.pinnedId === id ? '' : id;
+        sendFollowMe();
         render();
     }
 
@@ -713,7 +720,7 @@
             sheetItem(sheet, 'connection', t('toolbar.speakerStats'), () => openScreen('stats'));
             if (breakoutRoomsVisible()) sheetItem(sheet, 'breakout', t('breakoutRooms.buttonLabel'), () => openScreen('breakout'));
             sheet.appendChild(el('div', 'sheet-divider'));
-            sheetItem(sheet, 'gear', t('toolbar.Settings'), () => notify('openSettings', { title: t('toolbar.Settings') }));
+            sheetItem(sheet, 'gear', t('toolbar.Settings'), () => notify('openSettings', { title: t('toolbar.Settings'), moderation: moderationState() }));
             // Reaction menu footer, as in the mobile overflow menu.
             sheet.appendChild(el('div', 'sheet-divider'));
             const row = el('div', 'reactions-row');
@@ -793,6 +800,7 @@
     // ------------------------------------------------------------------- chat
 
     function renderChat() {
+        updateChatInput();
         const list = $('chat-messages');
         list.textContent = '';
         if (!state.messages.length) {
@@ -958,6 +966,7 @@
             sheetItem(sheet, state.pinnedId === p.id ? 'pinned' : 'pin', t(state.pinnedId === p.id ? 'videothumbnail.unpinFromStage' : 'videothumbnail.pinToStage'), () => {
                 state.pinnedId = state.pinnedId === p.id ? '' : p.id;
                 if (state.tileView) state.tileView = false;
+                sendFollowMe();
                 closeScreen();
                 render();
             });
@@ -1188,6 +1197,7 @@
 
     function toggleTileView() {
         state.tileView = !state.tileView;
+        sendFollowMe();
         render();
     }
 
@@ -1376,6 +1386,181 @@
         if ((!previous || previous.roomId !== details.roomId || previous.roomKey !== details.roomKey) && !state.whiteboardOpen) {
             openWhiteboard();
         }
+    }
+
+    // ----------------------------------------------------- moderator settings
+
+    // ModeratorSection of settings/components/native: the start muted
+    // policy, follow me, the reaction sounds and the chat permissions of the
+    // room. The section lives in the QML settings page, which reads
+    // moderationState() and changes values through setModeration().
+    const FOLLOW_ME_COMMAND = 'follow-me';
+    const MUTE_REACTIONS_COMMAND = 'mute-reactions';
+
+    function roomMetadata() {
+        const handler = state.conference && state.conference.getMetadataHandler && state.conference.getMetadataHandler();
+        return handler && handler.isSupported() ? handler : null;
+    }
+
+    function roomPermissions() {
+        const handler = roomMetadata();
+        return (handler && handler.getMetadata().permissions) || {};
+    }
+
+    function moderationState() {
+        if (!state.conference || !state.joined || !isModerator()) return null;
+        const config = state.serverConfig;
+        const handler = roomMetadata();
+        // setStartMutedPolicy keeps the policy in the room metadata; the
+        // conference's own copy only changes before joining.
+        const policy = (handler && handler.getMetadata().startMuted)
+            || (state.conference.getStartMutedPolicy && state.conference.getStartMutedPolicy()) || {};
+        const permissions = roomPermissions();
+        // isFollowMeActive: another moderator leads.
+        const followMeActive = !!state.followMeModerator && !state.followMeModeratorRecorder;
+        const followMeRecorderActive = !!state.followMeModerator && state.followMeModeratorRecorder;
+        return {
+            startAudioMuted: !!policy.audio,
+            startVideoMuted: !!policy.video,
+            audioModeration: !!(state.avModeration && state.avModeration.audio),
+            videoModeration: !!(state.avModeration && state.avModeration.video),
+            followMe: state.followMe && !followMeActive,
+            followMeRecorder: state.followMeRecorder && !followMeRecorderActive,
+            followMeActive,
+            followMeRecorderActive,
+            startReactionsMuted: !!state.startReactionsMuted,
+            showReactions: !config.disableReactionsModeration,
+            chatRestricted: !!permissions.groupChatRestricted,
+            privateChatRestricted: !!permissions.privateChatRestricted,
+            showChat: !!handler && !!config.showChatPermissionsModeratorSetting && !handler.getMetadata().allownersEnabled
+        };
+    }
+
+    function moderationChanged() {
+        notify('moderation', { state: moderationState() });
+    }
+
+    function setModeration(key, value) {
+        const conference = state.conference;
+        if (!conference || !isModerator()) return;
+        const current = moderationState();
+        switch (key) {
+        case 'startAudioMuted':
+        case 'startVideoMuted': {
+            const audio = key === 'startAudioMuted' ? value : current.startAudioMuted;
+            const video = key === 'startVideoMuted' ? value : current.startVideoMuted;
+            conference.setStartMutedPolicy({ audio, video });
+            break;
+        }
+        case 'followMe':
+            // Turning off the recorder mode also turns off follow me.
+            if (value && state.followMeRecorder) state.followMeRecorder = false;
+            state.followMe = value;
+            sendFollowMe(value ? undefined : 'off');
+            break;
+        case 'followMeRecorder':
+            // setFollowMeRecorderExclusive: one mode at a time.
+            state.followMeRecorder = value;
+            if (value) state.followMe = false;
+            sendFollowMe(value ? undefined : 'off');
+            break;
+        case 'startReactionsMuted':
+            state.startReactionsMuted = value;
+            prefs.soundReactions = !value;
+            conference.sendCommand(MUTE_REACTIONS_COMMAND, { attributes: { startReactionsMuted: Boolean(value) } });
+            break;
+        case 'chatRestricted':
+        case 'privateChatRestricted': {
+            const handler = roomMetadata();
+            if (!handler) return;
+            const name = key === 'chatRestricted' ? 'groupChatRestricted' : 'privateChatRestricted';
+            handler.setMetadata('permissions', Object.assign({}, handler.getMetadata().permissions, { [name]: value }));
+            break;
+        }
+        }
+        moderationChanged();
+    }
+
+    // follow-me/subscriber.ts: the leading moderator sends the tile view and
+    // the pinned participant whenever they change.
+    function sendFollowMe(off) {
+        const conference = state.conference;
+        if (!conference || !state.joined || !isModerator()) return;
+        if (off) {
+            conference.sendCommandOnce(FOLLOW_ME_COMMAND, { attributes: { off: true } });
+            return;
+        }
+        if (!state.followMe && !state.followMeRecorder) return;
+        conference.sendCommand(FOLLOW_ME_COMMAND, { attributes: {
+            recorder: state.followMeRecorder,
+            filmstripVisible: true,
+            nextOnStage: state.pinnedId || undefined,
+            sharedDocumentVisible: false,
+            tileViewEnabled: state.tileView
+        } });
+    }
+
+    // follow-me/middleware.ts _onFollowMeCommand. This client is never the
+    // recorder, so the recorder mode only marks the leader.
+    function onFollowMeCommand(attributes = {}, id) {
+        if (id === state.localId) return;
+        const sender = person(id);
+        if (!sender || sender.role !== 'moderator') { log('follow-me command not from a moderator'); return; }
+        if (attributes.off === 'true' || attributes.off === true) {
+            state.followMeModerator = '';
+            state.followMeModeratorRecorder = false;
+        } else {
+            state.followMeModerator = id;
+            state.followMeModeratorRecorder = attributes.recorder === 'true';
+            if (!state.followMeModeratorRecorder) {
+                state.tileView = attributes.tileViewEnabled === 'true';
+                const pinned = attributes.nextOnStage;
+                if (pinned && pinned !== state.localId && state.remotes.has(pinned)) state.pinnedId = pinned;
+                else if (!pinned) state.pinnedId = '';
+            }
+        }
+        render();
+        moderationChanged();
+    }
+
+    // reactions/middleware.ts _onMuteReactionsCommand.
+    function onMuteReactionsCommand(attributes = {}, id) {
+        const sender = person(id);
+        if (!sender || sender.role !== 'moderator') return;
+        const muted = attributes.startReactionsMuted === 'true';
+        if (muted === !!state.startReactionsMuted) return;
+        state.startReactionsMuted = muted;
+        prefs.soundReactions = !muted;
+        notify('preference', { key: 'soundReactions', value: !muted });
+        moderationChanged();
+    }
+
+    // The start muted policy concerns those who join: it is applied on
+    // joining and when it arrives right after, not to participants already in.
+    async function onStartMutedPolicy(policy) {
+        moderationChanged();
+        if (!state.joined || !policy || Date.now() - state.joinedAt > 5000) return;
+        await applyStartMuted(policy);
+    }
+
+    async function applyStartMuted(policy) {
+        if (!policy || isModerator()) return;
+        if (policy.audio && !state.audioMuted) await toggleAudio();
+        if (policy.video && !state.videoMuted) await toggleVideo();
+    }
+
+    // isSendGroupChatDisabled / isSendPrivateChatDisabled: moderators may
+    // always write.
+    function chatSendDisabled() {
+        if (!state.conference || isModerator()) return false;
+        const permissions = roomPermissions();
+        return state.privateRecipient ? !!permissions.privateChatRestricted : !!permissions.groupChatRestricted;
+    }
+
+    function updateChatInput() {
+        const disabled = chatSendDisabled();
+        $('chat-form').hidden = disabled;
+        $('chat-disabled').hidden = !disabled;
     }
 
     // ------------------------------------------------------------------ GIFs
@@ -2504,6 +2689,7 @@
                 const was = state.local.role;
                 state.local.role = role;
                 if (role === 'moderator' && was !== 'moderator' && state.joined) showNotification({ title: t('notify.moderator') });
+                moderationChanged();
             } else if (state.remotes.has(id)) state.remotes.get(id).role = role;
             render();
         });
@@ -2594,7 +2780,12 @@
             render();
         });
         on(C.BREAKOUT_ROOMS_MOVE_TO_ROOM, roomId => moveToRoom(roomId));
-        on(C.METADATA_UPDATED, onMetadataUpdated);
+        on(C.METADATA_UPDATED, metadata => {
+            onMetadataUpdated(metadata);
+            if (state.screen === 'chat') updateChatInput();
+            moderationChanged();
+        });
+        on(C.START_MUTED_POLICY_CHANGED, onStartMutedPolicy);
         on(C.AV_MODERATION_CHANGED, ({ enabled, mediaType }) => {
             if (mediaType === 'audio' || mediaType === 'video') state.avModeration[mediaType] = !!enabled;
         });
@@ -2603,6 +2794,12 @@
         on(C.CONNECTION_RESTORED, () => {
             const node = document.querySelector('[data-key="connection"]');
             if (node) node.remove();
+        });
+        conference.addCommandListener(FOLLOW_ME_COMMAND, (data, id) => {
+            if (state.conference === conference) onFollowMeCommand(data && data.attributes, id);
+        });
+        conference.addCommandListener(MUTE_REACTIONS_COMMAND, (data, id) => {
+            if (state.conference === conference) onMuteReactionsCommand(data && data.attributes, id);
         });
         conference.addCommandListener('avatar-url', (data, id) => {
             const p = state.remotes.get(id);
@@ -2629,6 +2826,9 @@
     function onConferenceJoined() {
         const conference = state.conference;
         state.joined = true;
+        state.joinedAt = Date.now();
+        state.followMeModerator = '';
+        if (conference.getStartMutedPolicy) applyStartMuted(conference.getStartMutedPolicy());
         state.localId = conference.myUserId();
         state.local.id = state.localId;
         state.local.role = conference.isModerator() ? 'moderator' : 'participant';
@@ -3057,6 +3257,7 @@
 
     window.auroraCall = {
         setToken,
+        setModeration,
         hangup: () => leave('hangup'),
         whiteboardClosed: () => { state.whiteboardOpen = false; },
         back: () => {

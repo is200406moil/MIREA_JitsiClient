@@ -326,3 +326,7 @@ h1 { margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; }
 .poll-create-buttons { margin: 16px 8px 0; }
 .poll-create-buttons .button.wide { margin: 0 0 16px; justify-content: center; }
 .poll-create-buttons .poll-buttons { padding: 0; }
+
+/* ChatInputBar.native when sending is not allowed. */
+.chat-input[hidden] { display: none; }
+.chat-disabled { flex: none; padding: 16px; text-align: center; color: var(--text03); background: var(--ui01); }

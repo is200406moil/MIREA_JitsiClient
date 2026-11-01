@@ -5,11 +5,13 @@ import "."
 // FormRow with a Switch (settings/components/native): at least 64 dp high,
 // 16 dp label on the left, switch on the right with the colours of
 // base/ui Switch: action01 track when on, ui05 when off, icon01 thumb.
+// Without preferenceKey the owner sets checked and handles toggled().
 BackgroundItem {
     id: toggle
     property string text
     property string preferenceKey
     property bool checked: appState.preferences[preferenceKey] === true
+    signal toggled(bool value)
 
     width: parent.width
     height: Math.max(64, labelText.height + 16)
@@ -17,7 +19,11 @@ BackgroundItem {
     Accessible.role: Accessible.CheckBox
     Accessible.name: text
     Accessible.checked: checked
-    onClicked: appState.setPreference(preferenceKey, !checked)
+    opacity: enabled ? 1 : 0.5
+    onClicked: {
+        if (preferenceKey) appState.setPreference(preferenceKey, !checked)
+        else toggled(!checked)
+    }
 
     Label {
         id: labelText
