@@ -7,6 +7,7 @@
   <style>
     html, body, #meeting { width: 100%; height: 100%; margin: 0; background: #040404; overflow: hidden; }
     iframe { display: block; border: 0; }
+    #meeting.in-call:not(.whiteboard) iframe { height: calc(100% + 520px) !important; transform: translateY(-260px); }
     #meeting.whiteboard iframe { height: calc(100% + 80px) !important; transform: translateY(-80px); }
     #status { box-sizing: border-box; position: absolute; inset: 0; display: flex; align-items: center;
       justify-content: center; padding: 32px; font: 16px/1.5 sans-serif; text-align: center; color: #a9b9ce; }
@@ -168,6 +169,7 @@
             api.addListener('videoAvailabilityChanged', checkDevices);
             api.addListener('audioAvailabilityChanged', checkDevices);
             api.addListener('videoConferenceJoined', function (data) {
+                document.getElementById('meeting').classList.add('in-call');
                 if (preferences.lowBandwidth === true) {
                     try { api.executeCommand('setLowBandwidthMode', true); }
                     catch (error) { notify('settingUnavailable', {setting:'lowBandwidth'}); }
@@ -182,6 +184,7 @@
             api.addListener('incomingMessage', function (data) { notify('incomingMessage', data); });
             api.addListener('outgoingMessage', function (data) { notify('outgoingMessage', data); });
             api.addListener('videoConferenceLeft', function () {
+                document.getElementById('meeting').classList.remove('in-call');
                 participants.clear();
                 notify('videoConferenceLeft');
                 countParticipants();

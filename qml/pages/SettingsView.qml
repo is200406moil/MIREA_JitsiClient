@@ -119,7 +119,7 @@ SilicaFlickable {
         Item {
             width: parent.width; height: 56
             Label { x: 16; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Версия"); color: AppStyle.text; font.pixelSize: 16 }
-            Label { anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter } text: "0.1.43"; color: AppStyle.muted; font.pixelSize: 14 }
+            Label { anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter } text: "0.1.52"; color: AppStyle.muted; font.pixelSize: 14 }
         }
         Row {
             width: parent.width; height: 56

@@ -18,6 +18,7 @@ Page {
     property bool videoMuted: initialVideoMuted
     property bool joined: false
     property bool waitingForModerator: false
+    property bool lobbyReady: false
     property bool controlsVisible: true
     property bool warningExpanded: false
     readonly property bool unsafeRoomName: page.roomName.trim().length > 0 && page.roomName.trim().length <= 8
@@ -168,7 +169,17 @@ Page {
             switch (name) {
             case "apiReady": page.apiReady = true; break
             case "videoConferenceJoined": page.joined = true; page.waitingForModerator = false; page.participantCount = 1; page.selfId = data.id || ""; page.message = ""; break
-            case "videoConferenceLeft": page.joined = false; page.participantCount = 0; page.participants = []; break
+            case "videoConferenceLeft":
+                page.joined = false
+                page.participantCount = 0
+                page.participants = []
+                page.moreOpen = false
+                page.chatOpen = false
+                page.participantsOpen = false
+                page.settingsOpen = false
+                page.whiteboardOpen = false
+                if (!page.leaving) { page.leaving = true; closeTimer.start() }
+                break
             case "whiteboardStatusChanged":
                 if (data.status === "SHOWN") page.openWhiteboard()
                 else if (data.status === "FORBIDDEN" || data.status === "HIDDEN" || data.status === "RESET") {
@@ -223,12 +234,18 @@ Page {
         }
     }
     Timer {
-        interval: 5000
+        interval: 12000
         running: page.apiReady && !page.joined && !page.leaving && !page.waitingForModerator
         onTriggered: page.waitingForModerator = true
     }
+    Timer {
+        interval: 320
+        running: page.waitingForModerator && !page.lobbyReady
+        onTriggered: page.lobbyReady = true
+    }
     Column {
         id: topPanel
+        z: 10
         visible: !page.whiteboardOpen && page.controlsVisible
         width: parent.width
         Rectangle {
@@ -296,7 +313,9 @@ Page {
                 id: warningText
                 x: 16; y: 8
                 width: parent.width - 32
-                text: qsTr("Название комнаты небезопасно. Нежелательные участники могут присоединиться к вашей встрече. Рассмотрите возможность защиты вашей встречи с использованием кнопки безопасности. Узнайте больше о защите вашей встречи here.")
+                text: qsTr("Название комнаты небезопасно. Нежелательные участники могут присоединиться к вашей встрече. Рассмотрите возможность защиты вашей встречи с использованием кнопки безопасности. Узнайте больше о защите вашей встречи <a href=\"https://jitsi.github.io/handbook/docs/faq/#how-can-i-protect-my-meetings-with-jitsi\">here</a>.")
+                textFormat: Text.RichText
+                onLinkActivated: pageStack.push(Qt.resolvedUrl("SecurityHelpPage.qml"), {address: link})
                 color: AppStyle.text
                 font.pixelSize: 25
                 wrapMode: Text.Wrap
@@ -321,6 +340,7 @@ Page {
     }
     Rectangle {
         id: whiteboardHeader
+        z: 10
         anchors { top: parent.top; left: parent.left; right: parent.right }
         visible: page.whiteboardOpen
         height: visible ? 90 : 0
@@ -345,11 +365,13 @@ Page {
     WebView {
         id: webView
         anchors {
-            top: page.whiteboardOpen ? whiteboardHeader.bottom : page.controlsVisible ? topPanel.bottom : parent.top
-            bottom: page.whiteboardOpen ? whiteboardFooter.top : page.controlsVisible ? callBar.top : parent.bottom
+            top: page.joined ? parent.top : topPanel.bottom
+            bottom: page.joined ? parent.bottom : callBar.top
             left: parent.left
             right: parent.right
         }
+        z: 1
+        clip: true
         url: appState.meetingUrl
         userAgent: "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
         TouchInput { enabled: true }
@@ -382,29 +404,32 @@ Page {
             bottomMargin: webView.height * 0.38
         }
         z: 2
-        enabled: page.joined && !page.waitingForModerator && !page.whiteboardOpen
+        enabled: page.joined && !page.whiteboardOpen
         onClicked: page.controlsVisible = !page.controlsVisible
+    }
+    Rectangle {
+        id: meetingShade
+        anchors.fill: parent
+        z: 3
+        visible: !page.joined && !page.lobbyReady && !page.authPopup && !page.leaving
+        color: AppStyle.background
+        Avatar {
+            anchors.centerIn: parent
+            width: Math.min(parent.width * 0.52, 360)
+            name: appState.displayName
+            imageUrl: appState.avatarUrl
+        }
     }
     BusyIndicator {
         anchors.centerIn: webView
+        z: 4
         size: BusyIndicatorSize.Large
-        running: !page.apiReady && !page.loadFailed
+        running: !page.apiReady && !page.loadFailed && !page.joined
         visible: running
-    }
-    AppButton {
-        visible: page.loadFailed
-        anchors.centerIn: webView
-        width: parent.width - 2 * Theme.horizontalPageMargin
-        text: qsTr("Повторить подключение")
-        onClicked: {
-            page.message = ""
-            page.apiReady = false
-            page.loadFailed = false
-            webView.reload()
-        }
     }
     Rectangle {
         id: callBar
+        z: 10
         visible: !page.whiteboardOpen && page.controlsVisible
         anchors { bottom: parent.bottom; left: parent.left; right: parent.right }
         height: 80
@@ -455,6 +480,7 @@ Page {
     }
     Rectangle {
         id: whiteboardFooter
+        z: 10
         anchors { bottom: parent.bottom; left: parent.left; right: parent.right }
         visible: page.whiteboardOpen
         height: visible ? 54 : 0
@@ -462,9 +488,12 @@ Page {
     }
     Item {
         id: waitingOverlay
-        anchors.fill: parent
+        width: parent.width
+        height: parent.height
+        y: page.waitingForModerator ? 0 : height
+        Behavior on y { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
         z: 70
-        visible: page.waitingForModerator && !page.joined && !page.leaving && !page.authPopup
+        visible: !page.joined && !page.leaving && !page.authPopup && !page.loadFailed
         Rectangle { anchors.fill: parent; color: AppStyle.background }
         Rectangle {
             width: parent.width; height: 90; color: AppStyle.surface
@@ -505,6 +534,7 @@ Page {
                 anchors.fill: parent
                 BackgroundItem {
                     width: 88; height: 88
+                    enabled: page.apiReady
                     Accessible.role: Accessible.Button
                     Accessible.name: page.audioMuted ? qsTr("Включить микрофон") : qsTr("Выключить микрофон")
                     Icon { anchors.centerIn: parent; source: Qt.resolvedUrl("../icons/" + (page.audioMuted ? "mic-slash" : "mic") + ".svg"); width: 48; height: 48; color: AppStyle.text }
@@ -512,6 +542,7 @@ Page {
                 }
                 BackgroundItem {
                     width: 88; height: 88
+                    enabled: page.apiReady
                     Accessible.role: Accessible.Button
                     Accessible.name: page.videoMuted ? qsTr("Включить камеру") : qsTr("Выключить камеру")
                     Icon { anchors.centerIn: parent; source: Qt.resolvedUrl("../icons/" + (page.videoMuted ? "video-off" : "video") + ".svg"); width: 48; height: 48; color: AppStyle.text }
@@ -558,6 +589,39 @@ Page {
                 font.bold: true
             }
         }
+    }
+    Item {
+        anchors.fill: parent
+        z: 71
+        visible: page.loadFailed && !page.joined && !page.leaving
+        Rectangle { anchors.fill: parent; color: AppStyle.background }
+        Label {
+            anchors.centerIn: parent
+            width: parent.width - 48
+            text: page.message
+            color: AppStyle.text
+            font.pixelSize: 27
+            wrapMode: Text.Wrap
+            horizontalAlignment: Text.AlignHCenter
+        }
+        AppButton {
+            anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 110 }
+            width: parent.width - 48
+            text: qsTr("Повторить подключение")
+            onClicked: {
+                page.message = ""
+                page.apiReady = false
+                page.waitingForModerator = false
+                page.loadFailed = false
+                webView.reload()
+            }
+        }
+    }
+    Rectangle {
+        anchors.fill: parent
+        z: 99
+        visible: page.leaving
+        color: AppStyle.background
     }
     Rectangle {
         anchors.fill: parent
