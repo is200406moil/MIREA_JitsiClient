@@ -3,9 +3,11 @@ JitsiField 1.0 JitsiField.qml
 AppButton 1.0 AppButton.qml
 Avatar 1.0 Avatar.qml
 ScreenHeader 1.0 ScreenHeader.qml
-CallControl 1.0 CallControl.qml
 JoinRoomForm 1.0 JoinRoomForm.qml
 SettingToggle 1.0 SettingToggle.qml
 SettingSection 1.0 SettingSection.qml
 CameraPreview 1.0 CameraPreview.qml
 BottomNavigation 1.0 BottomNavigation.qml
+RoomMenuSheet 1.0 RoomMenuSheet.qml
+SettingDivider 1.0 SettingDivider.qml
+PageHeader 1.0 PageHeader.qml

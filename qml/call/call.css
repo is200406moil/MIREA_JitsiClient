@@ -17,7 +17,7 @@
     --text02: #c2c2c2;
     --text03: #858585;
     --warning02: #ffd600;
-    --success: #1ec26a;
+    --success: #189b55;
     --private: #73348c;
     --radius: 6px;
     --titlebar: 64px;
@@ -43,6 +43,10 @@ h1 { margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; }
 /* Stage / large video */
 .stage, .tiles { position: absolute; inset: 0; background: var(--ui-background); }
 .stage .participant { position: absolute; inset: 0; }
+.shared-video { position: absolute; left: 0; right: 0; top: var(--titlebar); bottom: calc(var(--thumb) + 80px); background: #000; z-index: 1; }
+.shared-video iframe, .shared-video video { width: 100%; height: 100%; border: 0; display: block; }
+.participant img.gif { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: var(--ui-background); z-index: 1; }
+.thumbnail img.gif { object-fit: cover; }
 .participant video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: var(--ui-background); }
 .participant video.mirror { transform: scaleX(-1); }
 .participant .avatar-holder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
@@ -62,12 +66,14 @@ h1 { margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; }
     justify-content: center; padding: 4px 8px; margin-left: 4px; flex: none; }
 .label.timer { background: var(--ui03); font-weight: 600; min-width: 50px; font-variant-numeric: tabular-nums; }
 .label.insecure { background: var(--danger); padding: 4px; }
+.label.audio-only { background: var(--success); font-size: 12px; font-weight: 600; }
 .tb-button { position: relative; width: 56px; height: 56px; margin: 4px 4px 0 0; display: flex; align-items: center;
     justify-content: center; border-radius: 3px; flex: none; }
 .badge { position: absolute; top: 8px; right: 6px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
     background: var(--ui03); font-size: 10px; line-height: 16px; text-align: center; font-weight: 600; }
 .expanded-label { position: absolute; top: calc(var(--titlebar) + 8px); left: 8px; right: 8px; z-index: 12;
     background: var(--danger); border-radius: var(--radius); padding: 12px 16px; line-height: 20px; }
+.expanded-label.audio-only { background: var(--success); }
 .expanded-label a { color: #fff; text-decoration: underline; }
 
 /* Bottom: notifications, filmstrip, toolbox */
@@ -141,13 +147,15 @@ h1 { margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; }
 .sheet-divider { height: 1px; background: var(--ui03); margin: 8px 0; }
 .sheet-title { padding: 12px 16px; display: flex; align-items: center; gap: 12px; font-weight: 600; }
 .reactions-row { display: flex; justify-content: space-between; padding: 12px 16px; }
-.reaction-button { width: 48px; height: 48px; border-radius: var(--radius); font-size: 22px; line-height: 48px; text-align: center; }
+.reaction-button { width: 40px; height: 40px; border-radius: var(--radius); display: flex; align-items: center; justify-content: center; flex: none; }
+.reaction-button .emoji { width: 24px; height: 24px; }
+.gif-button .emoji { width: 22px; height: 28px; object-fit: contain; }
 .reaction-button:active { background: var(--ui04); }
 .hangup-sheet { padding: 8px; display: flex; flex-direction: column; gap: 8px; }
 
 /* Reactions */
 .reactions-layer { position: absolute; inset: 0; pointer-events: none; z-index: 30; overflow: hidden; }
-.flying-reaction { position: absolute; bottom: 120px; font-size: 32px; animation: fly 4s ease-out forwards; }
+.flying-reaction { position: absolute; bottom: 120px; width: 36px; height: 36px; animation: fly 4s ease-out forwards; }
 @keyframes fly { 0% { transform: translateY(0); opacity: 1; } 80% { opacity: 1; } 100% { transform: translateY(-60vh); opacity: 0; } }
 
 /* Full screens */
@@ -172,6 +180,16 @@ h1 { margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; }
 .message-time { font-size: 10px; color: var(--text03); padding: 0 4px; }
 .chat-recipient { display: flex; align-items: center; justify-content: space-between; background: var(--private);
     padding: 0 0 0 16px; min-height: 48px; }
+.chat-gif { display: block; max-width: 100%; max-height: 240px; border-radius: 4px; }
+.gif-search { margin: 0 8px 0 0; flex: 1; }
+.gif-grid { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; padding: 4px 8px; align-content: start; }
+.gif-item { aspect-ratio: 1; overflow: hidden; border-radius: 4px; background: var(--ui02); }
+.gif-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gif-footer { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+    color: var(--text02); font-size: 12px; }
+.gif-footer img { height: 16px; }
+.stats-time { color: var(--text02); font-variant-numeric: tabular-nums; }
+.participant-item.dominant-speaker .name { font-weight: 600; color: var(--success); }
 .chat-input { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 16px; background: var(--ui01);
     padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
 .chat-input input { flex: 1; height: 40px; border-radius: var(--radius); border: 0; outline: 0; padding: 0 12px;
@@ -192,6 +210,13 @@ h1 { margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; }
 .participant-item .states .muted { color: var(--danger); }
 .participant-item .states .hand { color: var(--warning02); }
 .lobby-actions { display: flex; gap: 8px; }
+.field.search { margin-top: 16px; height: 40px; }
+.participants-footer-wrap { background: var(--ui01); }
+.breakout-button { width: calc(100% - 32px); margin: 8px 16px 0; }
+.breakout-room { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 48px; font-weight: 600; text-align: left; }
+.breakout-participant { padding-left: 28px; }
+.breakout-footer { display: flex; flex-direction: column; gap: 8px; padding: 8px 16px calc(8px + env(safe-area-inset-bottom)); background: var(--ui01); }
+.breakout-footer .button.wide { margin-top: 0; }
 .participants-footer { display: flex; gap: 8px; padding: 8px 16px calc(8px + env(safe-area-inset-bottom)); background: var(--ui01); }
 .participants-footer .button:first-child { flex: 1; }
 
@@ -221,6 +246,9 @@ h1 { margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; }
     max-width: 400px; margin: 0 auto; background: var(--ui01); border-radius: var(--radius); padding: 24px; }
 .dialog .dialog-title { font-size: 16px; line-height: 24px; font-weight: 600; margin-bottom: 8px; }
 .dialog .dialog-text { color: var(--text02); margin-bottom: 16px; }
+.dialog .field + .field { margin-top: 8px; }
+.dialog .field + .dialog-text { margin: 8px 0 0; }
+.dialog .dialog-text:empty { display: none; }
 .dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
 .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 48px; }
 .switch { width: 40px; height: 24px; border-radius: 12px; background: var(--ui04); position: relative; flex: none; }
@@ -242,9 +270,13 @@ h1 { margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; }
 .waiting-title { font-size: 20px; line-height: 28px; font-weight: 600; }
 .waiting-message { color: var(--text02); }
 
-.connecting { position: absolute; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center;
+.connecting { position: absolute; inset: 0; z-index: 5; pointer-events: none; display: flex; flex-direction: column; align-items: center;
     justify-content: center; gap: 16px; background: rgba(4, 4, 4, .7); }
 .connecting-text { color: var(--text02); padding: 0 32px; text-align: center; }
 .spinner { width: 40px; height: 40px; border-radius: 50%; border: 3px solid var(--ui04); border-top-color: var(--text01);
     animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.password-section { margin-top: 8px; }
+.password-section .field { margin-bottom: 8px; }
+.password-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.password-value { flex: 1; font-weight: 600; }

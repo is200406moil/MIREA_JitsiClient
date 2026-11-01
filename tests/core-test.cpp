@@ -2,11 +2,12 @@
 #include <QCoreApplication>
 #include <QTemporaryDir>
 #include <QDebug>
+#include <cstdio>
 #include <cstdlib>
 
 static void require(bool condition, const char *message)
 {
-    if (!condition) { qCritical() << "FAIL:" << message; std::exit(1); }
+    if (!condition) { std::fprintf(stderr, "FAIL: %s\n", message); std::exit(1); }
 }
 
 int main(int argc, char **argv)
@@ -49,6 +50,8 @@ int main(int argc, char **argv)
     const QVariantMap linked = state.saveRoom("https://another.example.org/Team%20Meeting#ignored");
     require(linked.value("server") == "https://another.example.org" && linked.value("name") == "Team Meeting", "full link split correctly");
     require(state.saveRoom("http://bad.example.org/Room").isEmpty(), "unsupported room link rejected");
+    const QVariantMap bare = state.saveRoom("meet.otp.ru/МИРЭА", false);
+    require(bare.value("server") == "https://meet.otp.ru" && bare.value("name") == "МИРЭА", "link without scheme split correctly");
     state.importLegacy("[\"Legacy room\"]", "Old name");
     state.importLegacy("[\"Should not import twice\"]", "Old name");
     require(state.rooms().size() == 3 && state.displayName() == "Алексей", "legacy migration is idempotent and retains profile");

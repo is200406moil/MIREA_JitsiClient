@@ -2,47 +2,52 @@ import QtQuick 2.6
 import Sailfish.Silica 1.0
 import "."
 
+// Button of base/ui/components/native: 56 dp, radius 6, 14 dp semibold label.
+// type: "primary" (action01), "secondary" (action02), "tertiary" (no
+// background) or "destructive" (actionDanger).
 BackgroundItem {
     id: control
     property string text
     property string iconName
-    property bool primary: true
-    property bool destructive: false
-    property bool selected: false
+    property string type: "primary"
+    property bool uppercase: false
     width: parent ? parent.width : implicitWidth
-    height: Math.max(40, buttonText.implicitHeight + 20)
+    implicitWidth: content.implicitWidth + 48
+    height: 56
+    highlightedColor: "transparent"
     Accessible.role: Accessible.Button
     Accessible.name: text
+
     Rectangle {
         anchors.fill: parent
         radius: 6
-        color: control.down ? AppStyle.border : control.destructive ? AppStyle.danger
-                         : control.primary ? AppStyle.accent : AppStyle.raised
-        opacity: control.enabled ? 1 : 0.38
-        border.width: control.activeFocus || control.selected ? 2 : 0
-        border.color: AppStyle.muted
+        color: {
+            if (!control.enabled && control.type !== "tertiary") return "#C2C2C2"
+            if (control.type === "primary") return control.down ? AppStyle.accentActive : AppStyle.accent
+            if (control.type === "secondary") return control.down ? "#C2C2C2" : AppStyle.secondary
+            if (control.type === "destructive") return control.down ? "#CB2233" : AppStyle.danger
+            return control.down ? AppStyle.raised : "transparent"
+        }
     }
+
     Row {
-        id: buttonRow
-        width: control.width - 24
+        id: content
         anchors.centerIn: parent
         spacing: 8
         Icon {
             anchors.verticalCenter: parent.verticalCenter
             visible: control.iconName.length > 0
             width: 20
-            height: width
+            height: 20
             source: control.iconName.length ? Qt.resolvedUrl("../icons/" + control.iconName + ".svg") : ""
-            color: AppStyle.text
+            color: label.color
         }
         Label {
-            id: buttonText
-            width: buttonRow.width - (control.iconName.length ? 20 + buttonRow.spacing : 0)
-            color: AppStyle.text
-            text: control.text
-            font.pixelSize: 12
-            horizontalAlignment: Text.AlignHCenter
-            wrapMode: Text.Wrap
+            id: label
+            text: control.uppercase ? control.text.toUpperCase() : control.text
+            color: !control.enabled ? AppStyle.inactive : control.type === "secondary" ? AppStyle.dark : AppStyle.text
+            font.pixelSize: AppStyle.bodyShort
+            font.weight: Font.DemiBold
         }
     }
 }

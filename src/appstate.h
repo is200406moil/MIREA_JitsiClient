@@ -1,8 +1,8 @@
 #pragma once
 
 #include <QObject>
-#include <QNetworkAccessManager>
 #include <QHash>
+#include <QJsonObject>
 #include <QSettings>
 #include <QTcpServer>
 #include <QVariantList>
@@ -21,7 +21,6 @@ class AppState : public QObject
     Q_PROPERTY(QString meetingUrl READ meetingUrl NOTIFY meetingChanged)
     Q_PROPERTY(QString meetingOrigin READ meetingOrigin NOTIFY meetingChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY errorChanged)
-    Q_PROPERTY(QVariantMap dialInInfo READ dialInInfo NOTIFY dialInInfoChanged)
 
 public:
     explicit AppState(QObject *parent = nullptr, const QString &settingsFile = QString());
@@ -36,7 +35,6 @@ public:
     QString meetingUrl() const { return m_meetingUrl; }
     QString meetingOrigin() const { return m_meetingOrigin; }
     QString lastError() const { return m_error; }
-    QVariantMap dialInInfo() const { return m_dialInInfo; }
 
     Q_INVOKABLE bool saveProfile(const QString &name, const QString &email);
     Q_INVOKABLE bool saveSettings(const QString &server, bool audioMuted, bool videoMuted);
@@ -45,13 +43,15 @@ public:
     Q_INVOKABLE QVariantMap saveRoom(const QString &input, bool remember = true);
     Q_INVOKABLE void removeRoom(const QString &id);
     Q_INVOKABLE void importLegacy(const QString &json, const QString &name);
-    Q_INVOKABLE bool startMeeting(const QVariantMap &room, bool muteAudio, bool muteVideo);
+    Q_INVOKABLE bool startMeeting(const QVariantMap &room, bool muteAudio, bool muteVideo, bool audioOnly = false);
+    Q_INVOKABLE void appendCallLog(const QString &message);
     Q_INVOKABLE void finishMeeting();
     Q_INVOKABLE bool isTrustedOrigin(const QString &origin) const;
     Q_INVOKABLE QString initials(const QString &name) const;
+    // Jitsi Meet strings (qml/call/lang), the same files the call screen uses.
+    Q_INVOKABLE QString t(const QString &key, const QVariantMap &params = QVariantMap()) const;
     Q_INVOKABLE QString roomDate(qint64 timestamp) const;
     Q_INVOKABLE void copyText(const QString &text);
-    Q_INVOKABLE void fetchDialInInfo(const QVariantMap &room);
 
 signals:
     void profileChanged();
@@ -61,7 +61,6 @@ signals:
     void meetingChanged();
     void errorChanged();
     void conferenceEvent(const QString &name, const QVariantMap &data);
-    void dialInInfoChanged();
 
 private:
     QString normalizedServer(const QString &input) const;
@@ -71,8 +70,6 @@ private:
     void handleRequest(class QTcpSocket *socket);
     void sendResponse(class QTcpSocket *socket, int status, const QByteArray &type, const QByteArray &body);
     void markJoined();
-    void requestDialInEndpoints(const QString &roomName, const QString &serverAddress,
-                                const QString &numbersUrl, const QString &codeUrl, int requestId);
 
     QSettings *m_settings;
     QTcpServer m_http;
@@ -86,8 +83,8 @@ private:
     QString m_meetingUrl;
     QString m_meetingOrigin;
     QString m_error;
-    QNetworkAccessManager m_network;
-    QVariantMap m_dialInInfo;
-    int m_dialInRequestId = 0;
-    int m_dialInPending = 0;
+    QJsonObject m_strings;
+    QJsonObject m_fallbackStrings;
+    QJsonObject m_languages;
+    void loadStrings();
 };

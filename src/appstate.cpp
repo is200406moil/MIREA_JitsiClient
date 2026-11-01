@@ -3,19 +3,18 @@
 #include <QCryptographicHash>
 #include <QClipboard>
 #include <QDateTime>
+#include <QDir>
 #include <QFile>
 #include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLocale>
-#include <QNetworkReply>
-#include <QNetworkRequest>
 #include <QRegularExpression>
+#include <QStandardPaths>
 #include <QTcpSocket>
 #include <QTimer>
 #include <QUrl>
-#include <QUrlQuery>
 #include <QUuid>
 #include <auroraapp.h>
 #include <algorithm>
@@ -27,6 +26,7 @@ AppState::AppState(QObject *parent, const QString &settingsFile) : QObject(paren
         : new QSettings(settingsFile, QSettings::IniFormat, this);
     m_rooms = QJsonDocument::fromJson(m_settings->value("client/rooms").toByteArray()).array().toVariantList();
     connect(&m_http, &QTcpServer::newConnection, this, &AppState::acceptConnection);
+    loadStrings();
 }
 
 QString AppState::displayName() const { return m_settings->value("client/name").toString(); }
@@ -42,7 +42,8 @@ bool AppState::videoMuted() const { return m_settings->value("client/videoMuted"
 QVariantMap AppState::preferences() const
 {
     QVariantMap values;
-    const QStringList falseDefaults = { "hideSelfView", "lowBandwidth", "audioMuted", "videoMuted", "disableP2p" };
+    const QStringList falseDefaults = { "hideSelfView", "lowBandwidth", "audioMuted", "videoMuted", "disableP2p",
+                                        "disableCrashReporting" };
     const QStringList trueDefaults = { "soundReactions", "soundMessage", "soundJoined", "soundLeft",
                                       "soundTalkMuted", "soundLobby", "chatNotifications" };
     for (const QString &key : falseDefaults) values[key] = m_settings->value("client/" + key, false).toBool();
@@ -64,17 +65,20 @@ bool AppState::setPreference(const QString &key, const QVariant &value)
     }
     m_settings->sync();
     emit settingsChanged();
-    if (key == "language" && current.value(key) != value) emit interfaceLanguageChanged();
+    if (key == "language" && current.value(key) != value) {
+        loadStrings();
+        emit interfaceLanguageChanged();
+    }
     return true;
 }
 
 QString AppState::roomSection(qint64 timestamp) const
 {
-    if (!timestamp) return tr("Ранее");
+    if (!timestamp) return t("dateUtils.earlier");
     const QDate date = QDateTime::fromMSecsSinceEpoch(timestamp).date();
-    if (date == QDate::currentDate()) return tr("Сегодня");
-    if (date == QDate::currentDate().addDays(-1)) return tr("Вчера");
-    return tr("Ранее");
+    if (date == QDate::currentDate()) return t("dateUtils.today");
+    if (date == QDate::currentDate().addDays(-1)) return t("dateUtils.yesterday");
+    return t("dateUtils.earlier");
 }
 
 QString AppState::avatarUrl() const
@@ -87,100 +91,6 @@ QString AppState::avatarUrl() const
 void AppState::copyText(const QString &text)
 {
     QGuiApplication::clipboard()->setText(text);
-}
-
-void AppState::fetchDialInInfo(const QVariantMap &room)
-{
-    const int requestId = ++m_dialInRequestId;
-    const QString roomName = room.value("name").toString();
-    const QString serverAddress = normalizedServer(room.value("server").toString());
-    m_dialInInfo = {{"room", roomName}, {"loading", true}, {"numbers", QVariantList()}};
-    emit dialInInfoChanged();
-    if (roomName.isEmpty() || serverAddress.isEmpty()) {
-        m_dialInInfo["loading"] = false;
-        emit dialInInfoChanged();
-        return;
-    }
-    if (serverAddress == QStringLiteral("https://meet.jit.si")) {
-        requestDialInEndpoints(roomName, serverAddress,
-            QStringLiteral("https://api.jitsi.net/phoneNumberList"),
-            QStringLiteral("https://api.jitsi.net/conferenceMapper"), requestId);
-        return;
-    }
-    QNetworkReply *configReply = m_network.get(QNetworkRequest(QUrl(serverAddress + "/config.js")));
-    connect(configReply, &QNetworkReply::finished, this, [this, configReply, roomName, serverAddress, requestId]() {
-        const QString config = QString::fromUtf8(configReply->readAll());
-        const bool ok = configReply->error() == QNetworkReply::NoError;
-        configReply->deleteLater();
-        if (requestId != m_dialInRequestId) return;
-        const QRegularExpression numbersPattern("dialInNumbersUrl\\s*:\\s*['\"](https://[^'\"]+)['\"]");
-        const QRegularExpression codePattern("dialInConfCodeUrl\\s*:\\s*['\"](https://[^'\"]+)['\"]");
-        const auto numbers = numbersPattern.match(config);
-        const auto code = codePattern.match(config);
-        if (!ok || !numbers.hasMatch() || !code.hasMatch()) {
-            m_dialInInfo["loading"] = false;
-            emit dialInInfoChanged();
-            return;
-        }
-        requestDialInEndpoints(roomName, serverAddress, numbers.captured(1), code.captured(1), requestId);
-    });
-}
-
-void AppState::requestDialInEndpoints(const QString &roomName, const QString &serverAddress,
-                                      const QString &numbersUrl, const QString &codeUrl, int requestId)
-{
-    const QString host = QUrl(serverAddress).host();
-    const QString conference = roomName + "@conference." + host;
-    m_dialInPending = 2;
-    auto complete = [this, requestId]() {
-        if (requestId != m_dialInRequestId) return;
-        if (--m_dialInPending == 0) {
-            m_dialInInfo["loading"] = false;
-            emit dialInInfoChanged();
-        }
-    };
-    QUrl numberEndpoint(numbersUrl);
-    QUrlQuery numberQuery(numberEndpoint);
-    numberQuery.addQueryItem("conference", conference);
-    numberEndpoint.setQuery(numberQuery);
-    QNetworkReply *numbersReply = m_network.get(QNetworkRequest(numberEndpoint));
-    connect(numbersReply, &QNetworkReply::finished, this, [this, numbersReply, requestId, complete]() {
-        const QByteArray body = numbersReply->readAll();
-        const bool ok = numbersReply->error() == QNetworkReply::NoError;
-        numbersReply->deleteLater();
-        if (requestId != m_dialInRequestId) return;
-        if (ok) {
-            const QJsonObject response = QJsonDocument::fromJson(body).object();
-            QVariantList rows;
-            const QJsonObject countries = response.value("numbers").toObject();
-            QStringList order = {"US", "UK", "France", "Netherlands", "Spain", "Canada", "Australia", "Brazil"};
-            for (const QString &country : countries.keys()) if (!order.contains(country)) order.append(country);
-            for (const QString &country : order) {
-                for (const QJsonValue &number : countries.value(country).toArray())
-                    rows.append(QVariantMap{{"country", country}, {"number", number.toString()}});
-            }
-            if (response.value("numbersEnabled").toBool()) m_dialInInfo["numbers"] = rows;
-        }
-        complete();
-    });
-    QUrl codeEndpoint(codeUrl);
-    QUrlQuery codeQuery(codeEndpoint);
-    codeQuery.addQueryItem("conference", conference);
-    codeQuery.addQueryItem("url", serverAddress + "/" + QString::fromLatin1(QUrl::toPercentEncoding(roomName)));
-    codeEndpoint.setQuery(codeQuery);
-    QNetworkReply *codeReply = m_network.get(QNetworkRequest(codeEndpoint));
-    connect(codeReply, &QNetworkReply::finished, this, [this, codeReply, requestId, complete]() {
-        const QByteArray body = codeReply->readAll();
-        const bool ok = codeReply->error() == QNetworkReply::NoError;
-        codeReply->deleteLater();
-        if (requestId != m_dialInRequestId) return;
-        if (ok) {
-            const QJsonValue id = QJsonDocument::fromJson(body).object().value("id");
-            if (id.isString()) m_dialInInfo["pin"] = id.toString();
-            else if (id.isDouble()) m_dialInInfo["pin"] = QString::number(qint64(id.toDouble()));
-        }
-        complete();
-    });
 }
 
 QVariantList AppState::rooms() const
@@ -246,8 +156,11 @@ QVariantMap AppState::saveRoom(const QString &input, bool remember)
 {
     QString name = input.trimmed();
     QString address = server().isEmpty() ? QStringLiteral("https://meet.jit.si") : server();
+    // "meet.example.org/room" is a meeting link without the scheme.
+    static const QRegularExpression bareLink("^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+(:\\d+)?/\\S+$");
+    if (!name.contains("://") && bareLink.match(name).hasMatch()) name.prepend("https://");
     if (name.startsWith("https://", Qt::CaseInsensitive)) {
-        const QUrl link(name, QUrl::StrictMode);
+        const QUrl link(name, QUrl::TolerantMode);
         if (!link.isValid() || link.host().isEmpty() || !link.userInfo().isEmpty()) {
             setError(tr("Проверьте ссылку на встречу."));
             return QVariantMap();
@@ -311,6 +224,40 @@ void AppState::importLegacy(const QString &json, const QString &name)
     emit profileChanged();
 }
 
+void AppState::loadStrings()
+{
+    auto read = [](const QString &name) {
+        QFile file(Aurora::Application::pathTo("qml/call/lang/" + name).toLocalFile());
+        return file.open(QIODevice::ReadOnly) ? QJsonDocument::fromJson(file.readAll()).object() : QJsonObject();
+    };
+    m_fallbackStrings = read("main.json");
+    m_languages = read("languages.json");
+    m_strings = preferences().value("language").toString() == "en" ? m_fallbackStrings : read("main-ru.json");
+}
+
+// i18next lookup as in Jitsi: dotted keys, fallback to English, nested
+// $t(key) references and {{name}} parameters.
+QString AppState::t(const QString &key, const QVariantMap &params) const
+{
+    // i18next namespace "languages:" holds the language names.
+    if (key.startsWith(QLatin1String("languages:"))) return m_languages.value(key.mid(10)).toString(key.mid(10));
+    auto lookup = [&key](const QJsonObject &table) {
+        QJsonValue node(table);
+        for (const QString &part : key.split('.')) node = node.toObject().value(part);
+        return node.isString() ? node.toString() : QString();
+    };
+    QString value = lookup(m_strings);
+    if (value.isEmpty()) value = lookup(m_fallbackStrings);
+    if (value.isEmpty()) return key;
+    static const QRegularExpression nested("\\$t\\(([^)]+)\\)");
+    QRegularExpressionMatch match;
+    while ((match = nested.match(value)).hasMatch())
+        value.replace(match.capturedStart(), match.capturedLength(), t(match.captured(1)));
+    for (auto it = params.begin(); it != params.end(); ++it)
+        value.replace(QRegularExpression("\\{\\{\\s*" + QRegularExpression::escape(it.key()) + "\\s*\\}\\}"), it.value().toString());
+    return value;
+}
+
 QString AppState::initials(const QString &name) const
 {
     const QStringList parts = name.simplified().split(' ', QString::SkipEmptyParts);
@@ -351,7 +298,7 @@ QString AppState::roomDate(qint64 timestamp) const
     return QLocale(preferences().value("language") == "en" ? QLocale::English : QLocale::Russian).toString(time, "d MMMM, HH:mm");
 }
 
-bool AppState::startMeeting(const QVariantMap &room, bool muteAudio, bool muteVideo)
+bool AppState::startMeeting(const QVariantMap &room, bool muteAudio, bool muteVideo, bool audioOnly)
 {
     const QString address = normalizedServer(room.value("server").toString());
     if (address.isEmpty() || room.value("name").toString().isEmpty()) {
@@ -383,6 +330,7 @@ bool AppState::startMeeting(const QVariantMap &room, bool muteAudio, bool muteVi
     config["avatarURL"] = avatarUrl();
     config["audioMuted"] = muteAudio;
     config["videoMuted"] = muteVideo;
+    config["audioOnly"] = audioOnly;
     config["language"] = preferences().value("language").toString();
     config["jwt"] = m_tokens.value(QUrl(address).host());
     config["insecureRoomName"] = roomName.trimmed().size() <= 8;
@@ -444,6 +392,19 @@ void AppState::markJoined()
     }
 }
 
+// Errors of the call page, kept in the cache directory so they can be read
+// from a device (the WebView console is not available there).
+void AppState::appendCallLog(const QString &message)
+{
+    const QString directory = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    QDir().mkpath(directory);
+    QFile file(directory + "/call.log");
+    if (file.size() > 512 * 1024) file.remove();
+    if (!file.open(QIODevice::Append | QIODevice::Text)) return;
+    file.write(QDateTime::currentDateTime().toString(Qt::ISODate).toUtf8() + ' '
+               + m_activeRoom.value("server").toString().toUtf8() + ' ' + message.left(2000).toUtf8() + '\n');
+}
+
 void AppState::acceptConnection()
 {
     while (m_http.hasPendingConnections()) {
@@ -490,7 +451,11 @@ void AppState::handleRequest(QTcpSocket *socket)
     if (buffer.size() < split + 4 + contentLength) return;
     socket->setProperty("handled", true);
     const QByteArray expectedHost = "127.0.0.1:" + QByteArray::number(m_http.serverPort());
-    if (host != expectedHost || m_route.isEmpty()) { sendResponse(socket, 404, "text/plain", "Not found"); return; }
+    if (host != expectedHost || m_route.isEmpty()) {
+        appendCallLog(QStringLiteral("local server refused: host %1, route %2").arg(QString::fromUtf8(host), m_route.isEmpty() ? "none" : "set"));
+        sendResponse(socket, 404, "text/plain", "Not found");
+        return;
+    }
     const QByteArray route = m_route.toUtf8();
     if (request[0] == "GET" && request[1] == route) {
         sendResponse(socket, 200, "text/html; charset=utf-8", m_meetingHtml); return;
@@ -502,6 +467,7 @@ void AppState::handleRequest(QTcpSocket *socket)
         const QVariantMap data = event.value("data").toObject().toVariantMap();
         if (name == "joined") markJoined();
         if (name == "token") m_tokens.insert(QUrl(m_activeRoom.value("server").toString()).host(), data.value("jwt").toString());
+        if (name == "log") appendCallLog(data.value("message").toString());
         sendResponse(socket, 200, "application/json", "{}");
         emit conferenceEvent(name, data);
         return;
@@ -510,18 +476,19 @@ void AppState::handleRequest(QTcpSocket *socket)
         // Static files of the call page (qml/call). Only plain relative
         // paths inside that directory are served.
         const QString path = QString::fromUtf8(request[1].mid(route.size()));
-        static const QRegularExpression allowed("^[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+)*\\.(js|css|svg|json)$");
+        static const QRegularExpression allowed("^[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+)*\\.(js|css|svg|json|png)$");
         if (allowed.match(path).hasMatch() && !path.contains("..")) {
             QFile asset(Aurora::Application::pathTo("qml/call/" + path).toLocalFile());
             if (asset.open(QIODevice::ReadOnly)) {
                 static const QHash<QString, QByteArray> types {
                     {"js", "text/javascript; charset=utf-8"}, {"css", "text/css; charset=utf-8"},
-                    {"svg", "image/svg+xml"}, {"json", "application/json; charset=utf-8"}
+                    {"svg", "image/svg+xml"}, {"json", "application/json; charset=utf-8"}, {"png", "image/png"}
                 };
                 sendResponse(socket, 200, types.value(path.section('.', -1)), asset.readAll());
                 return;
             }
         }
     }
+    appendCallLog(QStringLiteral("local server 404: %1 %2").arg(QString::fromUtf8(request[0]), QString::fromUtf8(request[1])));
     sendResponse(socket, 404, "text/plain", "Not found");
 }

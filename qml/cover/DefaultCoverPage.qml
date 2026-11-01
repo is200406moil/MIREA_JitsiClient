@@ -6,8 +6,8 @@ CoverBackground {
 
     CoverTemplate {
         objectName: "applicationCover"
-        primaryText: qsTr("Jitsi")
-        secondaryText: qsTr("Комнаты и встречи")
+        primaryText: "Jitsi"
+        secondaryText: "Meet"
         icon {
             source: Qt.resolvedUrl("../icons/Jitsi.png")
             sourceSize { width: icon.width; height: icon.height }

@@ -25,6 +25,18 @@
         }).catch(() => {});
     }
 
+    // Errors go to the application's call log (see AppState), since the
+    // WebView console is not reachable on a device.
+    function log(...args) {
+        console.warn(...args);
+        const text = args.map(arg => {
+            if (arg instanceof Error) return arg.name + ': ' + arg.message;
+            if (typeof arg === 'string') return arg;
+            try { return JSON.stringify(arg); } catch (error) { return String(arg); }
+        }).join(' ');
+        notify('log', { message: text.slice(0, 2000) });
+    }
+
     // ------------------------------------------------------------------ i18n
 
     let strings = [{}, {}];
@@ -70,12 +82,14 @@
         root.querySelectorAll('[data-icon]').forEach(node => node.style.setProperty('--icon', `url(icons/${node.dataset.icon}.svg)`));
     }
 
-    function loadScript(src) {
+    // A server that does not answer would keep the page loading for minutes.
+    function loadScript(src, timeout = 20000) {
         return new Promise((resolve, reject) => {
             const script = document.createElement('script');
+            const timer = setTimeout(() => { script.remove(); reject(new Error('Timed out loading ' + src)); }, timeout);
             script.src = src;
-            script.onload = resolve;
-            script.onerror = () => reject(new Error('Failed to load ' + src));
+            script.onload = () => { clearTimeout(timer); resolve(); };
+            script.onerror = () => { clearTimeout(timer); script.remove(); reject(new Error('Failed to load ' + src)); };
             document.head.appendChild(script);
         });
     }
@@ -189,7 +203,7 @@
         pinnedId: '',
         tileView: false,
         toolboxVisible: true,
-        audioOnly: !!prefs.lowBandwidth,
+        audioOnly: !!prefs.lowBandwidth || !!cfg.audioOnly,
         facingMode: 'user',
         audioMuted: !!cfg.audioMuted,
         videoMuted: !!cfg.videoMuted,
@@ -201,8 +215,23 @@
         lobbyEnabled: false,
         locked: false,
         roomPassword: '',
+        // XMPP login of servers with username/password authentication.
+        credentials: null,
+        upgradeProcess: null,
+        waitForOwnerTimer: 0,
         screen: '',
-        waiting: null
+        waiting: null,
+        retries: 0,
+        switchingRoom: false,
+        roomName: null,
+        breakoutRooms: {},
+        roomCounter: 0,
+        collabDetails: null,
+        whiteboardOpen: false,
+        screenSharing: false,
+        cameraTrackBeforeShare: null,
+        avModeration: { audio: false, video: false },
+        participantFilter: ''
     };
 
     function displayNameOf(person) {
@@ -249,7 +278,9 @@
 
     function videoTrackOf(p) {
         const track = p && p.tracks.video;
-        if (!track || track.isMuted() || (state.audioOnly && !p.local)) return null;
+        if (!track || track.isMuted()) return null;
+        // Low bandwidth mode keeps only audio and screen sharing.
+        if (state.audioOnly && !p.local && track.getVideoType() !== 'desktop') return null;
         return track;
     }
 
@@ -258,7 +289,13 @@
     // the participant's track actually changes.
     function updateView(view, p, options) {
         view.dataset.id = p.id;
-        const track = videoTrackOf(p);
+        const gifUrl = activeGif(p.id);
+        let gif = view.querySelector('img.gif');
+        if (gifUrl) {
+            if (!gif) { gif = el('img', 'gif'); view.prepend(gif); }
+            if (gif.getAttribute('src') !== gifUrl) gif.src = gifUrl;
+        } else if (gif) gif.remove();
+        const track = gifUrl ? null : videoTrackOf(p);
         let video = view.querySelector('video');
         if (track) {
             if (!video) {
@@ -273,13 +310,13 @@
                 track.attach(video);
                 video._track = track;
             }
-            video.classList.toggle('mirror', p.local && state.facingMode === 'user' && track.getVideoType() !== 'desktop');
+            video.classList.toggle('mirror', !!p.local && state.facingMode === 'user' && track.getVideoType() !== 'desktop');
         } else if (video) {
             if (video._track) video._track.detach(video);
             video.remove();
         }
         let holder = view.querySelector('.avatar-holder');
-        if (!track) {
+        if (!track && !gifUrl) {
             if (!holder) {
                 holder = el('div', 'avatar-holder');
                 holder.appendChild(el('div', 'avatar'));
@@ -349,6 +386,7 @@
 
     function renderMedia() {
         const app = $('app');
+        renderSharedVideo(!!state.sharedVideo && !state.pinnedId && !state.tileView);
         app.classList.toggle('tile-view', state.tileView);
         $('stage').hidden = state.tileView;
         $('tiles').hidden = !state.tileView;
@@ -362,8 +400,9 @@
             reconcile($('tiles'), people, 'tile participant', { indicators: true, name: true, onClick: toggleToolbox });
         } else {
             reconcile($('tiles'), [], 'tile', {});
-            reconcile($('stage'), [stageParticipant()], 'participant', { onClick: toggleToolbox });
-            const thumbs = state.remotes.size ? [...state.remotes.values()] : [];
+            const videoOnStage = !!state.sharedVideo && !state.pinnedId;
+            reconcile($('stage'), videoOnStage ? [] : [stageParticipant()], 'participant', { onClick: toggleToolbox });
+            const thumbs = state.remotes.size || state.sharedVideo ? [...state.remotes.values()] : [];
             if (thumbs.length && showSelf) thumbs.push(state.local);
             reconcile($('filmstrip'), thumbs, 'thumbnail participant', { indicators: true, onClick: togglePin });
             $('filmstrip').hidden = !thumbs.length;
@@ -408,14 +447,16 @@
         const serialized = JSON.stringify(value);
         if (serialized === lastConstraints) return;
         lastConstraints = serialized;
-        try { conference.setReceiverConstraints(value); } catch (error) { console.warn('receiver constraints', error); }
+        try { conference.setReceiverConstraints(value); } catch (error) { log('receiver constraints', error); }
     }
 
     function renderTitlebar() {
         $('titlebar').classList.toggle('hidden', !state.toolboxVisible);
-        $('room-name').textContent = cfg.room;
+        const breakout = currentBreakoutRoom();
+        $('room-name').textContent = breakout ? breakout.name : cfg.room;
         $('room-timer').hidden = !state.startedAt;
         $('insecure-label').hidden = !cfg.insecureRoomName;
+        $('audio-only-label').hidden = !state.audioOnly;
         const count = state.remotes.size + 1;
         $('participants-count').hidden = !state.joined;
         $('participants-count').textContent = count;
@@ -426,14 +467,16 @@
         if (state.startedAt) $('room-timer').textContent = formatDuration(Date.now() - state.startedAt);
     }
 
-    // NATIVE_THRESHOLDS from react/features/toolbox/constants.ts, without the
-    // screen sharing button which Aurora does not provide.
+    // NATIVE_THRESHOLDS from react/features/toolbox/constants.ts. The screen
+    // sharing button is shown only where the WebView can capture the screen.
     function mainButtons() {
         const width = window.innerWidth;
+        if (width >= 560 && screenShareSupported()) {
+            return ['microphone', 'camera', 'chat', 'desktop', 'raisehand', 'tileview', 'overflowmenu', 'hangup'];
+        }
         if (width >= 500) return ['microphone', 'camera', 'chat', 'raisehand', 'tileview', 'overflowmenu', 'hangup'];
         if (width >= 440) return ['microphone', 'camera', 'chat', 'raisehand', 'overflowmenu', 'hangup'];
-        if (width >= 380) return ['microphone', 'camera', 'chat', 'overflowmenu', 'hangup'];
-        return ['microphone', 'camera', 'overflowmenu', 'hangup'];
+        return ['microphone', 'camera', 'chat', 'overflowmenu', 'hangup'];
     }
 
     const buttons = {
@@ -443,6 +486,8 @@
         raisehand: () => ({ icon: 'raise-hand', label: t(state.local.raisedHand ? 'toolbar.lowerYourHand' : 'toolbar.raiseYourHand'),
             action: toggleRaiseHand, toggled: state.local.raisedHand }),
         tileview: () => ({ icon: 'tile-view', label: t('toolbar.tileViewToggle'), action: toggleTileView, toggled: state.tileView }),
+        desktop: () => ({ icon: 'screenshare', label: t('toolbar.accessibilityLabel.shareYourScreen'), action: toggleScreenShare,
+            toggled: state.screenSharing }),
         overflowmenu: () => ({ icon: 'dots-horizontal', label: t('toolbar.moreActions'), action: openOverflowMenu }),
         hangup: () => ({ icon: 'hangup', label: t('toolbar.hangup'), action: onHangup, className: 'hangup' })
     };
@@ -470,6 +515,36 @@
         state.toolboxVisible = !state.toolboxVisible;
         $('expanded-label').hidden = true;
         render();
+    }
+
+    // ExpandedLabelPopup: the explanation under a title bar label, hidden
+    // again after EXPANDED_LABEL_TIMEOUT (5 s) or on tap.
+    let expandedTimer = 0;
+
+    function showExpandedLabel(kind) {
+        const label = $('expanded-label');
+        clearTimeout(expandedTimer);
+        if (!label.hidden && label.dataset.kind === kind) { label.hidden = true; return; }
+        label.textContent = '';
+        label.dataset.kind = kind;
+        label.className = 'expanded-label ' + kind;
+        if (kind === 'insecure') {
+            // getUnsafeRoomText(): the web string carries the localized "here" link.
+            const text = t('security.insecureRoomNameWarningWeb', { recommendAction: t('security.unsafeRoomActions.meeting') });
+            const match = text.match(/^([\s\S]*?)<a[^>]*>([\s\S]*?)<\/a>([\s\S]*)$/);
+            label.appendChild(document.createTextNode(match ? match[1] : text));
+            if (match) {
+                const link = el('a', '', match[2]);
+                link.href = '#';
+                link.addEventListener('click', e => { e.preventDefault(); notify('openUrl', { url: cfg.securityHelpUrl }); });
+                label.appendChild(link);
+                label.appendChild(document.createTextNode(match[3]));
+            }
+        } else if (kind === 'audio-only') {
+            label.textContent = t('videoStatus.lowBandwidthModeExpanded');
+        }
+        label.hidden = false;
+        expandedTimer = setTimeout(() => { label.hidden = true; }, 5000);
     }
 
     function togglePin(id) {
@@ -510,6 +585,7 @@
     // ---------------------------------------------------------------- dialogs
 
     function closeDialog() {
+        delete $('dialog').dataset.kind;
         $('dialog').hidden = true;
         $('dialog-backdrop').hidden = true;
         $('dialog').textContent = '';
@@ -539,6 +615,7 @@
 
     function confirmDialog(options) {
         openDialog(dialog => {
+            if (options.kind) dialog.dataset.kind = options.kind;
             if (options.title) dialog.appendChild(el('div', 'dialog-title', options.title));
             if (options.text) dialog.appendChild(el('div', 'dialog-text', options.text));
             const actions = [];
@@ -596,28 +673,61 @@
         return item;
     }
 
+    // REACTIONS of react/features/reactions/constants.ts. Aurora has no colour
+    // emoji font, so they are drawn with Twemoji images (emoji/, CC-BY 4.0).
     const REACTIONS = {
-        like: '👍', clap: '👏', laugh: '😀', surprised: '😮', boo: '🙁', silence: '😶'
+        like: '1f44d', clap: '1f44f', laugh: '1f600', surprised: '1f62e', boo: '1f641', silence: '1f636', love: '1f496'
     };
+
+    function emoji(key, className) {
+        const image = el('img', className || 'emoji');
+        image.src = `emoji/${REACTIONS[key]}.svg`;
+        image.alt = '';
+        return image;
+    }
 
     function openOverflowMenu() {
         const main = mainButtons();
+        // Order of OverflowMenu.native: low bandwidth, security, whiteboard,
+        // the main toolbar buttons that did not fit, breakout rooms, reactions.
         openSheet(sheet => {
-            sheetItem(sheet, 'performance', t(state.audioOnly ? 'toolbar.lowBandwidthModeOff' : 'lowBandwidthMode.lowBandwidthMode'), toggleAudioOnly);
+            sheetItem(sheet, state.audioOnly ? 'video' : 'performance',
+                t(state.audioOnly ? 'toolbar.lowBandwidthModeOff' : 'toolbar.lowBandwidthModeOn'), toggleAudioOnly);
             sheetItem(sheet, state.locked || state.lobbyEnabled ? 'security-on' : 'security-off', t('toolbar.security'), openSecurityDialog);
+            if (whiteboardButtonVisible()) {
+                sheetItem(sheet, 'whiteboard', t(state.whiteboardOpen ? 'toolbar.hideWhiteboard' : 'toolbar.showWhiteboard'), toggleWhiteboard);
+            }
             sheet.appendChild(el('div', 'sheet-divider'));
-            if (!main.includes('chat')) sheetItem(sheet, 'message', t('chat.title'), () => openScreen('chat'));
-            sheetItem(sheet, 'users', t('toolbar.participants'), () => openScreen('participants'));
+            if (sharedVideoButtonVisible()) {
+                sheetItem(sheet, 'play', t(isSharedVideoOwner() ? 'toolbar.stopSharedVideo' : 'toolbar.sharedvideo'), toggleSharedVideo);
+            }
+            if (!main.includes('chat')) sheetItem(sheet, 'message', t('toolbar.chat'), () => openScreen('chat'));
+            if (!main.includes('desktop') && screenShareSupported()) {
+                sheetItem(sheet, 'screenshare', t(state.screenSharing ? 'toolbar.stopScreenSharing' : 'toolbar.startScreenSharing'), toggleScreenShare);
+            }
             if (!main.includes('tileview')) sheetItem(sheet, 'tile-view', t('toolbar.tileViewToggle'), toggleTileView);
-            sheetItem(sheet, 'share', t('toolbar.shareRoom'), invite);
+            sheetItem(sheet, 'connection', t('toolbar.speakerStats'), () => openScreen('stats'));
+            if (breakoutRoomsVisible()) sheetItem(sheet, 'breakout', t('breakoutRooms.buttonLabel'), () => openScreen('breakout'));
+            sheet.appendChild(el('div', 'sheet-divider'));
+            sheetItem(sheet, 'gear', t('toolbar.Settings'), () => notify('openSettings', { title: t('toolbar.Settings') }));
             // Reaction menu footer, as in the mobile overflow menu.
             sheet.appendChild(el('div', 'sheet-divider'));
             const row = el('div', 'reactions-row');
             Object.keys(REACTIONS).forEach(key => {
-                const button = el('button', 'reaction-button', REACTIONS[key]);
+                const button = el('button', 'reaction-button');
+                button.appendChild(emoji(key));
                 button.addEventListener('click', () => sendReaction(key));
                 row.appendChild(button);
             });
+            if (giphyEnabled()) {
+                const gif = el('button', 'reaction-button gif-button');
+                gif.setAttribute('aria-label', t('toolbar.accessibilityLabel.giphy'));
+                const image = el('img', 'emoji');
+                image.src = 'icons/giphy.png';
+                gif.appendChild(image);
+                gif.addEventListener('click', () => openScreen('gifs'));
+                row.appendChild(gif);
+            }
             sheet.appendChild(row);
             const hand = el('button', 'button secondary wide');
             hand.style.margin = '0 16px 16px';
@@ -651,18 +761,27 @@
         state.screen = name;
         $('chat').hidden = name !== 'chat';
         $('participants').hidden = name !== 'participants';
+        $('breakout').hidden = name !== 'breakout';
+        $('gifs').hidden = name !== 'gifs';
+        $('stats').hidden = name !== 'stats';
+        if (name === 'gifs') openGifMenu();
+        if (name === 'stats') renderSpeakerStats();
         if (name === 'chat') {
             state.unread = 0;
             renderChat();
             render();
         }
         if (name === 'participants') renderParticipants();
+        if (name === 'breakout') renderBreakoutRooms();
     }
 
     function closeScreen() {
         state.screen = '';
         $('chat').hidden = true;
         $('participants').hidden = true;
+        $('breakout').hidden = true;
+        $('gifs').hidden = true;
+        $('stats').hidden = true;
         $('chat-input').blur();
         render();
     }
@@ -691,7 +810,13 @@
             if (!message.local && stack.childNodes.length === 0) bubble.appendChild(el('div', 'author', message.name));
             if (message.privateTo) bubble.appendChild(el('div', 'private-note', t('chat.messageTo', { recipient: message.privateToName })));
             else if (message.privateFrom) bubble.appendChild(el('div', 'private-note', t('chat.privateNotice', { recipient: t('chat.you') })));
-            bubble.appendChild(document.createTextNode(message.text));
+            const gifUrl = gifDisplayMode() !== 'tile' && gifFromMessage(message.text);
+            if (gifUrl) {
+                const image = el('img', 'chat-gif');
+                image.src = gifUrl;
+                image.addEventListener('load', () => { if (list.scrollHeight - list.scrollTop - list.clientHeight < 400) list.scrollTop = list.scrollHeight; });
+                bubble.appendChild(image);
+            } else bubble.appendChild(document.createTextNode(message.text));
             stack.appendChild(bubble);
             stack.appendChild(el('div', 'message-time', formatTime(message.ts)));
         });
@@ -702,12 +827,16 @@
     }
 
     function addMessage(message) {
+        const gifUrl = gifFromMessage(message.text);
+        if (gifUrl && !message.privateTo && !message.privateFrom && gifDisplayMode() !== 'chat') showGifOnTile(message.from, gifUrl);
+        if (gifUrl && gifDisplayMode() === 'tile') return;
         state.messages.push(message);
+        if (!message.local) playSound('message');
         if (state.screen === 'chat') renderChat();
         else if (!message.local) {
             state.unread++;
             if (prefs.chatNotifications !== false) {
-                showNotification({ title: message.name, description: message.text, onClick: () => openScreen('chat') });
+                showNotification({ title: message.name, description: gifUrl ? t('notify.gifsMenu') : message.text, onClick: () => openScreen('chat') });
             }
             render();
         }
@@ -738,7 +867,7 @@
         const item = el('div', 'participant-item');
         item.appendChild(avatar(p));
         const details = el('div', 'details');
-        details.appendChild(el('div', 'name', displayNameOf(p) + (p.local ? ` (${t('localRecording.me')})` : '')));
+        details.appendChild(el('div', 'name', displayNameOf(p) + (p.local ? ` (${t('chat.you')})` : '')));
         if (p.role === 'moderator') details.appendChild(el('div', 'role', t('videothumbnail.moderator')));
         item.appendChild(details);
         if (options.lobby) {
@@ -782,10 +911,13 @@
         $('participants-heading').textContent = t('participantsPane.headings.participantsList', { count: people.length });
         const list = $('participants-list');
         list.textContent = '';
+        const filter = state.participantFilter.trim().toLowerCase();
         const sorted = [state.local, ...[...state.remotes.values()].sort((a, b) =>
             (isRaised(b.raisedHand) - isRaised(a.raisedHand)) || displayNameOf(a).localeCompare(displayNameOf(b)))];
-        sorted.forEach(p => list.appendChild(participantItem(p, {})));
+        sorted.filter(p => !filter || displayNameOf(p).toLowerCase().includes(filter))
+            .forEach(p => list.appendChild(participantItem(p, {})));
         $('participants-footer').hidden = !isModerator();
+        $('breakout-button').hidden = !breakoutRoomsVisible();
     }
 
     function openParticipantMenu(id) {
@@ -811,6 +943,14 @@
                 }), 'danger');
             }
             sheetItem(sheet, 'message', t('toolbar.privateMessage'), () => startPrivateChat(p.id));
+            const rooms = Object.values(state.breakoutRooms);
+            if (moderator && rooms.length > 1) {
+                sheet.appendChild(el('div', 'sheet-divider'));
+                sheet.appendChild(el('div', 'sheet-title', t('breakoutRooms.actions.sendToBreakoutRoom')));
+                rooms.filter(room => room.id !== currentRoomId()).forEach(room => {
+                    sheetItem(sheet, null, room.isMainRoom ? t('breakoutRooms.mainRoom') : room.name, () => sendParticipantToRoom(p.id, room.id));
+                });
+            }
             sheetItem(sheet, state.pinnedId === p.id ? 'pinned' : 'pin', t(state.pinnedId === p.id ? 'videothumbnail.unpinFromStage' : 'videothumbnail.pinToStage'), () => {
                 state.pinnedId = state.pinnedId === p.id ? '' : p.id;
                 if (state.tileView) state.tileView = false;
@@ -820,10 +960,28 @@
         });
     }
 
+    // ContextMenuMore.native: stop everyone's video and, where the server
+    // supports it, whether non-moderators may unmute themselves.
     function openModerationMenu() {
+        const conference = state.conference;
         openSheet(sheet => {
-            sheetItem(sheet, 'video-off', t('participantsPane.actions.stopEveryonesVideo'), () => state.conference.muteParticipant
-                && [...state.remotes.keys()].forEach(id => state.conference.muteParticipant(id, 'video')));
+            sheetItem(sheet, 'video-off', t('participantsPane.actions.stopEveryonesVideo'),
+                () => [...state.remotes.keys()].forEach(id => conference.muteParticipant(id, 'video')));
+            if (!conference || typeof conference.isAVModerationSupported !== 'function' || !conference.isAVModerationSupported()
+                || isInBreakoutRoom()) return;
+            sheet.appendChild(el('div', 'sheet-title', t('participantsPane.actions.allow')));
+            [['audio', 'participantsPane.actions.audioModeration'], ['video', 'participantsPane.actions.videoModeration']].forEach(([type, key]) => {
+                const item = el('button', 'sheet-item');
+                const check = icon('check');
+                check.style.visibility = state.avModeration[type] ? 'hidden' : 'visible';
+                item.append(check, el('span', '', t(key)));
+                item.addEventListener('click', () => {
+                    closeSheet();
+                    if (state.avModeration[type]) conference.disableAVModeration(type);
+                    else conference.enableAVModeration(type);
+                });
+                sheet.appendChild(item);
+            });
         });
     }
 
@@ -865,38 +1023,60 @@
                 Promise.resolve(result).then(() => {
                     state.lobbyEnabled = enable;
                     lobbySwitch.classList.toggle('on', enable);
-                }).catch(error => console.warn('lobby toggle', error));
+                }).catch(error => log('lobby toggle', error));
             });
             lobbyRow.appendChild(lobbySwitch);
             dialog.appendChild(lobbyRow);
             dialog.appendChild(el('div', 'sheet-divider'));
-            dialog.appendChild(el('div', 'dialog-text', t('security.about')));
-            if (state.locked) {
-                const row = el('div', 'switch-row');
-                row.appendChild(el('span', '', `${t('lockRoomPasswordUppercase')}: ${state.roomPassword || '••••'}`));
-                if (moderator) {
-                    const remove = el('button', 'button tertiary small', t('dialog.removePassword'));
-                    remove.addEventListener('click', () => { state.conference.lock('').then(() => { state.locked = false; state.roomPassword = ''; openSecurityDialog(); }); });
-                    row.appendChild(remove);
-                }
-                dialog.appendChild(row);
-            } else if (moderator) {
+            // Password section of SecurityDialog.native: "Set password", then
+            // a field with Cancel/Add; once locked, Remove and Copy.
+            dialog.appendChild(el('div', 'dialog-text', t(moderator ? 'security.about' : 'security.aboutReadOnly')));
+            const section = el('div', 'password-section');
+            const button = (label, onClick, disabled) => {
+                const node = el('button', 'button tertiary small', label);
+                node.disabled = !!disabled;
+                node.addEventListener('click', onClick);
+                return node;
+            };
+            const showSet = () => {
+                section.textContent = '';
+                section.appendChild(button(t('info.addPassword'), showEdit, !moderator));
+            };
+            const showEdit = () => {
+                section.textContent = '';
                 const input = el('input', 'field');
-                input.placeholder = t('lockRoomPasswordUppercase');
-                dialog.appendChild(input);
-                const add = el('button', 'button primary wide', t('dialog.Ok'));
-                add.disabled = true;
-                input.addEventListener('input', () => { add.disabled = !input.value; });
-                add.addEventListener('click', () => {
+                input.type = 'password';
+                input.placeholder = t('dialog.password');
+                const row = el('div', 'password-actions');
+                const add = button(t('dialog.add'), () => {
                     const value = input.value;
+                    if (!value) return;
                     state.conference.lock(value).then(() => {
                         state.locked = true;
                         state.roomPassword = value;
-                        openSecurityDialog();
+                        showLocked();
                     }).catch(() => showNotification({ type: 'error', title: t('dialog.lockTitle'), description: t('dialog.lockMessage') }));
-                });
-                dialog.appendChild(add);
-            }
+                }, true);
+                input.addEventListener('input', () => { add.disabled = !input.value; });
+                row.append(button(t('dialog.Cancel'), showSet), add);
+                section.append(input, row);
+                setTimeout(() => input.focus(), 50);
+            };
+            const showLocked = () => {
+                section.textContent = '';
+                const row = el('div', 'password-actions');
+                row.appendChild(el('span', 'password-value', `${t('info.password')} ${state.roomPassword || '••••'}`));
+                if (moderator) {
+                    row.appendChild(button(t('dialog.Remove'), () => {
+                        state.conference.lock('').then(() => { state.locked = false; state.roomPassword = ''; showSet(); });
+                    }));
+                }
+                if (state.roomPassword) row.appendChild(button(t('dialog.copy'), () => notify('copy', { text: state.roomPassword })));
+                section.appendChild(row);
+            };
+            if (state.locked) showLocked();
+            else showSet();
+            dialog.appendChild(section);
             dialogActions(dialog, [{ label: t('dialog.Ok'), type: 'tertiary', onClick: closeDialog }]);
         });
     }
@@ -991,10 +1171,12 @@
 
     function setAudioOnly(enabled) {
         state.audioOnly = enabled;
-        if (enabled && !state.videoMuted && state.local.tracks.video) {
+        if (enabled && !state.videoMuted && state.local.tracks.video && !state.screenSharing) {
             state.local.tracks.video.mute();
             state.videoMuted = true;
         }
+        if (enabled) showExpandedLabel('audio-only');
+        else if ($('expanded-label').dataset.kind === 'audio-only') $('expanded-label').hidden = true;
         render();
     }
 
@@ -1019,13 +1201,804 @@
         }
     }
 
+    const SOUNDS = {
+        joined: ['joined', 'soundJoined'], left: ['left', 'soundLeft'],
+        message: ['incomingMessage', 'soundMessage'], knock: ['knock', 'soundLobby'],
+        like: ['reactions-thumbs-up', 'soundReactions'], clap: ['reactions-applause', 'soundReactions'],
+        laugh: ['reactions-laughter', 'soundReactions'], surprised: ['reactions-surprise', 'soundReactions'],
+        boo: ['reactions-boo', 'soundReactions'], silence: ['reactions-crickets', 'soundReactions'],
+        love: ['reactions-love', 'soundReactions']
+    };
+    const soundCache = new Map();
+
+    function playSound(key) {
+        const sound = SOUNDS[key];
+        if (!sound || prefs[sound[1]] === false) return;
+        let audio = soundCache.get(key);
+        if (!audio) {
+            audio = new Audio(`${new URL(cfg.server).origin}/sounds/${sound[0]}.mp3`);
+            soundCache.set(key, audio);
+        }
+        audio.currentTime = 0;
+        audio.play().catch(() => {});
+    }
+
     function showReaction(key) {
-        const emoji = REACTIONS[key];
-        if (!emoji) return;
-        const node = el('div', 'flying-reaction', emoji);
+        if (!REACTIONS[key]) return;
+        playSound(key);
+        const node = emoji(key, 'flying-reaction');
         node.style.left = (20 + Math.random() * 60) + '%';
         $('reactions-layer').appendChild(node);
         setTimeout(() => node.remove(), 4000);
+    }
+
+    // ---------------------------------------------------------- screen share
+
+    function screenShareSupported() {
+        return !!(navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function');
+    }
+
+    async function toggleScreenShare() {
+        if (mediaBusy || !state.conference) return;
+        mediaBusy = true;
+        try {
+            if (state.screenSharing) {
+                await stopScreenShare();
+            } else {
+                let tracks;
+                try {
+                    tracks = await JitsiMeetJS.createLocalTracks({ devices: ['desktop'] });
+                } catch (error) {
+                    log('screen share with audio', error);
+                    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+                    tracks = await Promise.resolve(JitsiMeetJS.createLocalTracksFromMediaStreams([{
+                        stream, sourceType: 'screen', mediaType: 'video', videoType: 'desktop'
+                    }]));
+                }
+                const desktop = tracks.find(track => track.getType() === 'video');
+                tracks.filter(track => track !== desktop).forEach(track => track.dispose());
+                if (!desktop) throw new Error('No screen track');
+                const camera = state.local.tracks.video;
+                state.cameraTrackBeforeShare = camera && !camera.isMuted() ? 'on' : 'off';
+                desktop.on(JitsiMeetJS.events.track.LOCAL_TRACK_STOPPED, () => { if (state.screenSharing) stopScreenShare(); });
+                await setLocalTrack('video', desktop);
+                state.screenSharing = true;
+                state.videoMuted = false;
+            }
+        } catch (error) {
+            log('screen share', error);
+            if (!error || error.name !== 'gum.permission_denied') {
+                showNotification({ type: 'error', title: t('dialog.screenSharingFailed') });
+            }
+        } finally {
+            mediaBusy = false;
+            render();
+        }
+    }
+
+    async function stopScreenShare() {
+        state.screenSharing = false;
+        let camera = null;
+        if (state.cameraTrackBeforeShare === 'on' && !state.audioOnly) {
+            try { camera = await createTrack('video'); } catch (error) { log('camera after share', error); }
+        }
+        await setLocalTrack('video', camera);
+        state.videoMuted = !camera;
+        render();
+    }
+
+    // ------------------------------------------------------------ whiteboard
+
+    // Whiteboard as in jitsi-meet: the session (roomId + roomKey) is shared in
+    // the conference metadata under "whiteboard"; every client opens the
+    // server's static/whiteboard.html with that session.
+    function whiteboardConfig() {
+        return (state.serverConfig && state.serverConfig.whiteboard) || {};
+    }
+
+    function whiteboardEnabled() {
+        const config = whiteboardConfig();
+        const metadata = state.conference && state.conference.getMetadataHandler && state.conference.getMetadataHandler();
+        return (config.enabled !== undefined ? config.enabled : !!state.collabDetails)
+            && !!config.collabServerBaseUrl && !!metadata && metadata.isSupported();
+    }
+
+    function whiteboardButtonVisible() {
+        return whiteboardEnabled() && (isModerator() || !!state.collabDetails);
+    }
+
+    function collabServerUrl() {
+        const base = whiteboardConfig().collabServerBaseUrl;
+        if (!base) return '';
+        const path = '/' + cfg.room.normalize('NFKC').toLowerCase();
+        const room = md5(isInBreakoutRoom() ? `${path}|${currentRoomId()}` : path);
+        return base + (base.includes('?') ? '&' : '?') + 'room=' + encodeURIComponent(room);
+    }
+
+    function base64Url(text) {
+        const bytes = new TextEncoder().encode(text);
+        let binary = '';
+        bytes.forEach(b => { binary += String.fromCharCode(b); });
+        return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    }
+
+    function whiteboardUrl() {
+        const details = state.collabDetails;
+        const info = { roomId: details.roomId, roomKey: details.roomKey, collabServerUrl: collabServerUrl(),
+            localParticipantName: cfg.displayName || '' };
+        return new URL(cfg.server).origin + '/static/whiteboard.html#state=' + base64Url(JSON.stringify(info));
+    }
+
+    // generateCollaborationLinkData() of Excalidraw: a random AES-GCM key.
+    async function generateRoomKey() {
+        const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 128 }, true, ['encrypt', 'decrypt']);
+        return (await crypto.subtle.exportKey('jwk', key)).k;
+    }
+
+    async function toggleWhiteboard() {
+        if (state.whiteboardOpen) { closeWhiteboard(); return; }
+        if (!state.collabDetails) {
+            if (!isModerator()) return;
+            try {
+                const collabDetails = { roomId: currentRoomId(), roomKey: await generateRoomKey() };
+                state.collabDetails = collabDetails;
+                state.conference.getMetadataHandler().setMetadata('whiteboard', { collabDetails, collabServerUrl: collabServerUrl() });
+            } catch (error) {
+                log('whiteboard', error);
+                showNotification({ type: 'error', title: t('info.noWhiteboard') });
+                return;
+            }
+        }
+        openWhiteboard();
+    }
+
+    function openWhiteboard() {
+        if (!state.collabDetails) return;
+        state.whiteboardOpen = true;
+        notify('openWhiteboard', { url: whiteboardUrl(), title: t('whiteboard.screenTitle'), closeLabel: t('dialog.close') });
+    }
+
+    function closeWhiteboard() {
+        state.whiteboardOpen = false;
+        notify('closeWhiteboard');
+    }
+
+    function onMetadataUpdated(metadata) {
+        const details = metadata && metadata.whiteboard && metadata.whiteboard.collabDetails;
+        const previous = state.collabDetails;
+        if (!details) return;
+        state.collabDetails = details;
+        // Only a new session opens the board (middleware.any UPDATE_CONFERENCE_METADATA).
+        if ((!previous || previous.roomId !== details.roomId || previous.roomKey !== details.roomKey) && !state.whiteboardOpen) {
+            openWhiteboard();
+        }
+    }
+
+    // ------------------------------------------------------------------ GIFs
+
+    // features/gifs: a GIF is sent as the chat message "gif[<i.giphy.com url>]"
+    // and shown on the sender's tile for giphy.tileTime (5 s by default).
+    function giphyConfig() {
+        return (state.serverConfig && state.serverConfig.giphy) || {};
+    }
+
+    function giphyEnabled() {
+        return !!(giphyConfig().enabled && giphyConfig().sdkKey);
+    }
+
+    function gifDisplayMode() {
+        return giphyConfig().displayMode || 'all';
+    }
+
+    function gifFromMessage(text) {
+        const message = (text || '').trim();
+        if (!message.toLowerCase().startsWith('gif[') || !message.endsWith(']')) return '';
+        const url = message.substring(4, message.length - 1);
+        try { return new URL(url).hostname === 'i.giphy.com' ? url : ''; } catch (error) { return ''; }
+    }
+
+    const gifs = new Map();
+
+    function activeGif(id) {
+        const gif = gifs.get(id === state.localId ? 'local' : id) || gifs.get(id);
+        return gif ? gif.url : '';
+    }
+
+    // The tile uses GIPHY's 200 px rendition of the same GIF and counts its
+    // time from the moment it has loaded: the full giphy.gif is several MB
+    // and on a phone it would not arrive within the 5 s.
+    function showGifOnTile(id, url) {
+        const key = id === state.localId ? 'local' : id;
+        const previous = gifs.get(key);
+        if (previous) clearTimeout(previous.timer);
+        gifs.delete(key);
+        const small = url.replace(/\/giphy\.gif$/, '/200w.gif');
+        const image = new Image();
+        const show = source => {
+            const timer = setTimeout(() => { gifs.delete(key); render(); }, giphyConfig().tileTime || 5000);
+            gifs.set(key, { url: source, timer });
+            render();
+        };
+        image.onload = () => show(small);
+        image.onerror = () => show(url);
+        image.src = small;
+    }
+
+    let gifRequest = 0;
+
+    function openGifMenu() {
+        const input = $('gif-search');
+        input.value = '';
+        input.placeholder = t('giphy.search');
+        loadGifs('');
+    }
+
+    async function loadGifs(query) {
+        const request = ++gifRequest;
+        const grid = $('gif-grid');
+        const params = new URLSearchParams({ api_key: giphyConfig().sdkKey, limit: '30', rating: giphyConfig().rating || 'g' });
+        if (query) params.set('q', query);
+        const endpoint = `https://api.giphy.com/v1/gifs/${query ? 'search' : 'trending'}?${params}`;
+        try {
+            const response = await fetch(endpoint, { credentials: 'omit' });
+            const body = await response.json();
+            if (request !== gifRequest) return;
+            grid.textContent = '';
+            const items = body.data || [];
+            if (!items.length) grid.appendChild(el('div', 'chat-empty', t('giphy.noResults')));
+            items.forEach(item => {
+                const images = item.images || {};
+                const preview = (images.fixed_width_downsampled || images.fixed_width || images.downsized || {}).url;
+                if (!preview) return;
+                const button = el('button', 'gif-item');
+                const image = el('img');
+                image.src = preview;
+                image.loading = 'lazy';
+                button.appendChild(image);
+                button.addEventListener('click', () => sendGif(item));
+                grid.appendChild(button);
+            });
+        } catch (error) {
+            log('giphy', error);
+            if (request === gifRequest) { grid.textContent = ''; grid.appendChild(el('div', 'chat-empty', t('giphy.noResults'))); }
+        }
+    }
+
+    // getGifUrl(): the media id is the last segment of embed_url.
+    function sendGif(item) {
+        const embed = item.embed_url || '';
+        const id = embed.substring(embed.lastIndexOf('/') + 1) || item.id;
+        closeScreen();
+        if (!id || !state.conference || !state.joined) return;
+        state.conference.sendTextMessage(`gif[https://i.giphy.com/media/${id}/giphy.gif]`);
+    }
+
+    // ---------------------------------------------------------- shared video
+
+    // features/shared-video: the owner broadcasts the "shared-video" command
+    // (value = YouTube id or video URL, attributes from/state/time/muted);
+    // the others follow it and correct their position when it drifts > 5 s.
+    let player = null;
+    let playerReady = false;
+    let sharedVideoTimer = 0;
+
+    function sharedVideoButtonVisible() {
+        if (state.serverConfig && state.serverConfig.disableSharedVideo) return false;
+        return !state.sharedVideo || isSharedVideoOwner();
+    }
+
+    function isSharedVideoOwner() {
+        return !!state.sharedVideo && state.sharedVideo.ownerId === state.localId;
+    }
+
+    function youtubeId(url) {
+        const match = url.match(/^(?:https?:\/\/)?(?:www\.)?(?:youtu\.be\/|(?:m\.)?youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))((\w|-){11})(?:\S+)?$/);
+        return match ? match[1] : null;
+    }
+
+    function extractVideo(input) {
+        const link = (input || '').trim();
+        if (!link) return '';
+        const id = youtubeId(link);
+        if (id) return id;
+        try { new URL(link); return link; } catch (error) { return ''; }
+    }
+
+    function toggleSharedVideo() {
+        if (isSharedVideoOwner()) { stopSharedVideo(); return; }
+        openDialog(dialog => {
+            dialog.appendChild(el('div', 'dialog-title', t('dialog.shareVideoTitle')));
+            const input = el('input', 'field');
+            input.placeholder = t('dialog.sharedVideoLinkPlaceholder');
+            dialog.appendChild(input);
+            const error = el('div', 'field-error', t('dialog.sharedVideoDialogError'));
+            error.hidden = true;
+            dialog.appendChild(error);
+            const row = dialogActions(dialog, [
+                { label: t('dialog.Cancel'), onClick: closeDialog },
+                { label: t('dialog.Ok'), type: 'primary', disabled: true, onClick: () => {
+                    const video = extractVideo(input.value);
+                    if (!video) { error.hidden = false; input.classList.add('error'); return; }
+                    closeDialog();
+                    startSharedVideo(video);
+                } }
+            ]);
+            input.addEventListener('input', () => {
+                row.lastChild.disabled = !input.value.trim();
+                error.hidden = true;
+                input.classList.remove('error');
+            });
+        });
+    }
+
+    function sendSharedVideoCommand(status, time) {
+        const video = state.sharedVideo;
+        if (!state.conference || !video) return;
+        state.conference.sendCommandOnce('shared-video', {
+            value: video.url,
+            attributes: { from: state.localId, muted: false, state: status, time: Math.max(0, time || 0) }
+        });
+    }
+
+    function startSharedVideo(url) {
+        state.sharedVideo = { url, ownerId: state.localId, status: 'start', time: 0 };
+        state.pinnedId = '';
+        state.tileView = false;
+        sendSharedVideoCommand('start', 0);
+        clearInterval(sharedVideoTimer);
+        // AbstractVideoManager: the owner reports its state every 5 seconds.
+        sharedVideoTimer = setInterval(reportSharedVideo, 5000);
+        render();
+    }
+
+    function reportSharedVideo() {
+        if (!isSharedVideoOwner()) return;
+        const time = playerTime();
+        const status = playerPlaying() ? 'playing' : 'pause';
+        state.sharedVideo.status = status;
+        state.sharedVideo.time = time;
+        sendSharedVideoCommand(status, time);
+    }
+
+    function stopSharedVideo() {
+        if (isSharedVideoOwner()) sendSharedVideoCommand('stop', 0);
+        resetSharedVideo();
+    }
+
+    function resetSharedVideo() {
+        clearInterval(sharedVideoTimer);
+        state.sharedVideo = null;
+        destroyPlayer();
+        render();
+    }
+
+    function onSharedVideoCommand(data, from) {
+        const attributes = data.attributes || {};
+        const status = attributes.state;
+        const url = data.value;
+        const current = state.sharedVideo;
+        if (current && current.ownerId !== from) return;
+        if (status === 'stop') {
+            if (current && from !== state.localId) {
+                showNotification({ type: 'warning', title: t('dialog.shareVideoLinkStopped', { name: displayNameOf(person(from)) }) });
+                resetSharedVideo();
+            }
+            return;
+        }
+        if (!['start', 'playing', 'pause'].includes(status) || from === state.localId) return;
+        if (current && current.url !== url) return;
+        const time = Number(attributes.time) || 0;
+        if (!current) {
+            const accept = () => {
+                state.sharedVideo = { url, ownerId: from, status, time };
+                state.pinnedId = '';
+                state.tileView = false;
+                render();
+            };
+            // Only YouTube is trusted without asking (DEFAULT_ALLOWED_URL_DOMAINS).
+            if (/^https?:/.test(url) && !/(^|\.)youtube\.com$/.test(hostOf(url))) {
+                confirmDialog({ title: t('dialog.shareVideoConfirmPlayTitle', { name: displayNameOf(person(from)) }),
+                    text: t('dialog.shareVideoConfirmPlay'), confirmLabel: t('dialog.Yes'), onConfirm: accept });
+            } else accept();
+            return;
+        }
+        current.status = status;
+        current.time = time;
+        followSharedVideo();
+    }
+
+    function hostOf(url) {
+        try { return new URL(url).hostname; } catch (error) { return ''; }
+    }
+
+    function playerTime() {
+        if (!player) return 0;
+        if (player.tagName === 'VIDEO') return player.currentTime || 0;
+        return playerReady && player.getCurrentTime ? player.getCurrentTime() || 0 : 0;
+    }
+
+    function playerPlaying() {
+        if (!player) return false;
+        if (player.tagName === 'VIDEO') return !player.paused;
+        return playerReady && !!player.getPlayerState && player.getPlayerState() === 1;
+    }
+
+    function followSharedVideo() {
+        const video = state.sharedVideo;
+        if (!video || !player || isSharedVideoOwner()) return;
+        if (player.tagName !== 'VIDEO' && !playerReady) return;
+        if (Math.abs(playerTime() - video.time) > 5) {
+            if (player.tagName === 'VIDEO') player.currentTime = video.time;
+            else player.seekTo(video.time, true);
+        }
+        const play = video.status === 'playing' || video.status === 'start';
+        if (play && !playerPlaying()) {
+            if (player.tagName === 'VIDEO') player.play().catch(() => {});
+            else player.playVideo();
+        } else if (!play && playerPlaying()) {
+            if (player.tagName === 'VIDEO') player.pause();
+            else player.pauseVideo();
+        }
+    }
+
+    function destroyPlayer() {
+        if (player && player.destroy) { try { player.destroy(); } catch (error) { /* already gone */ } }
+        player = null;
+        playerReady = false;
+        const holder = $('shared-video');
+        holder.textContent = '';
+        holder.dataset.url = '';
+    }
+
+    let youtubeApi = null;
+
+    function loadYoutubeApi() {
+        if (!youtubeApi) {
+            youtubeApi = new Promise(resolve => {
+                window.onYouTubeIframeAPIReady = () => resolve(window.YT);
+                loadScript('https://www.youtube.com/iframe_api').catch(error => { log('youtube api', error); youtubeApi = null; });
+            });
+        }
+        return youtubeApi;
+    }
+
+    function renderSharedVideo(visible) {
+        const holder = $('shared-video');
+        holder.hidden = !visible;
+        const video = state.sharedVideo;
+        if (!video) { if (player || holder.dataset.url) destroyPlayer(); return; }
+        if (holder.dataset.url === video.url) return;
+        destroyPlayer();
+        holder.dataset.url = video.url;
+        const owner = isSharedVideoOwner();
+        if (/^https?:/.test(video.url)) {
+            const element = el('video');
+            element.src = video.url;
+            element.playsInline = true;
+            element.controls = owner;
+            element.autoplay = true;
+            if (!owner) element.currentTime = video.time;
+            element.addEventListener('play', () => { if (owner) reportSharedVideo(); });
+            element.addEventListener('pause', () => { if (owner) reportSharedVideo(); });
+            holder.appendChild(element);
+            player = element;
+            return;
+        }
+        const target = el('div');
+        holder.appendChild(target);
+        loadYoutubeApi().then(YT => {
+            if (holder.dataset.url !== video.url) return;
+            player = new YT.Player(target, {
+                videoId: video.url,
+                width: '100%',
+                height: '100%',
+                playerVars: { autoplay: 1, controls: owner ? 1 : 0, playsinline: 1, rel: 0, start: Math.floor(video.time || 0) },
+                events: {
+                    onReady: () => { playerReady = true; if (owner) reportSharedVideo(); else followSharedVideo(); },
+                    onStateChange: () => { if (owner) reportSharedVideo(); }
+                }
+            });
+        });
+    }
+
+    // ------------------------------------------------------- speaker stats
+
+    let statsTimer = 0;
+
+    // createLocalizedTime() of speaker-stats: "1ч 2м 3с".
+    function speakerTime(ms) {
+        const total = Math.floor(ms / 1000);
+        const hours = Math.floor(total / 3600);
+        const minutes = Math.floor(total / 60) % 60;
+        const seconds = total % 60;
+        const parts = [];
+        if (hours) parts.push(t('speakerStats.hours', { count: hours }));
+        if (hours || minutes) parts.push(t('speakerStats.minutes', { count: minutes }));
+        parts.push(t('speakerStats.seconds', { count: seconds }));
+        return parts.join(' ');
+    }
+
+    function renderSpeakerStats() {
+        clearInterval(statsTimer);
+        const input = $('stats-search');
+        input.placeholder = t('speakerStats.searchHint');
+        const draw = () => {
+            if (state.screen !== 'stats') { clearInterval(statsTimer); return; }
+            const list = $('stats-list');
+            list.textContent = '';
+            const stats = state.conference && state.conference.getSpeakerStats ? state.conference.getSpeakerStats() : {};
+            const filter = input.value.trim().toLowerCase();
+            Object.entries(stats)
+                .filter(([, item]) => !item.hasLeft || !item.hasLeft())
+                .map(([id, item]) => {
+                    const p = person(id) || { name: item.getDisplayName && item.getDisplayName() };
+                    return { p, time: item.getTotalDominantSpeakerTime(), dominant: item.isDominantSpeaker(), local: id === state.localId };
+                })
+                .filter(entry => !filter || displayNameOf(entry.p).toLowerCase().includes(filter))
+                .sort((a, b) => b.time - a.time)
+                .forEach(entry => {
+                    const item = el('div', 'participant-item' + (entry.dominant ? ' dominant-speaker' : ''));
+                    item.appendChild(avatar(entry.p));
+                    const details = el('div', 'details');
+                    details.appendChild(el('div', 'name', displayNameOf(entry.p) + (entry.local ? ` (${t('chat.you')})` : '')));
+                    item.appendChild(details);
+                    item.appendChild(el('div', 'stats-time', speakerTime(entry.time)));
+                    list.appendChild(item);
+                });
+        };
+        draw();
+        statsTimer = setInterval(draw, 1000);
+    }
+
+    // ------------------------------------------------------- breakout rooms
+
+    function breakoutApi() {
+        const api = state.conference && state.conference.getBreakoutRooms && state.conference.getBreakoutRooms();
+        return api && api.isSupported() ? api : null;
+    }
+
+    function isInBreakoutRoom() {
+        const api = breakoutApi();
+        return !!(api && api.isBreakoutRoom());
+    }
+
+    function mainRoom() {
+        return Object.values(state.breakoutRooms).find(room => room.isMainRoom);
+    }
+
+    // getCurrentRoomId(): rooms are keyed by the room node, not the full JID.
+    function currentRoomId() {
+        if (isInBreakoutRoom()) return state.conference.getName();
+        const main = mainRoom();
+        return main ? main.id : (state.conference ? state.conference.getName() : '');
+    }
+
+    function currentBreakoutRoom() {
+        if (!isInBreakoutRoom()) return null;
+        return state.breakoutRooms[currentRoomId()] || null;
+    }
+
+    function breakoutRoomsVisible() {
+        if (!breakoutApi()) return false;
+        const others = Object.values(state.breakoutRooms).filter(room => !room.isMainRoom);
+        return isModerator() || others.length > 0;
+    }
+
+    // The focus component is listed among the room members but is not a person.
+    function roomParticipants(room) {
+        return Object.entries(room.participants || {})
+            .filter(([key, p]) => !key.endsWith('/focus') && !(p.jid || '').startsWith('focus@'))
+            .map(([, p]) => p);
+    }
+
+    function createBreakoutRoom() {
+        const api = breakoutApi();
+        if (!api) return;
+        state.roomCounter++;
+        api.createBreakoutRoom(t('breakoutRooms.defaultName', { index: state.roomCounter }));
+    }
+
+    // _findParticipantJid() of breakout-rooms/actions.ts: the rooms list is
+    // keyed by the MUC JID and carries the connection JID the server needs.
+    function participantJid(id) {
+        let roomJid = id;
+        if (!id.includes('@')) {
+            const participant = state.conference && state.conference.getParticipantById(id);
+            roomJid = participant ? participant.getJid() : '';
+        }
+        if (!roomJid) return '';
+        for (const room of Object.values(state.breakoutRooms)) {
+            const participants = room.participants || {};
+            const entry = participants[roomJid] || Object.values(participants).find(item => item.jid === roomJid);
+            if (entry) return entry.jid;
+        }
+        return '';
+    }
+
+    function sendParticipantToRoom(id, roomId) {
+        const api = breakoutApi();
+        const room = state.breakoutRooms[roomId];
+        const jid = participantJid(id);
+        if (!api || !room || !jid) { log('send to room: unknown participant or room', id, roomId); return; }
+        api.sendParticipantToRoom(jid, room.jid);
+    }
+
+    function closeBreakoutRoom(room) {
+        const main = mainRoom();
+        if (!main) return;
+        roomParticipants(room).forEach(p => {
+            const api = breakoutApi();
+            if (api) api.sendParticipantToRoom(p.jid, main.jid);
+        });
+    }
+
+    function removeBreakoutRoom(room) {
+        if (roomParticipants(room).length) closeBreakoutRoom(room);
+        const api = breakoutApi();
+        if (api) api.removeBreakoutRoom(room.jid);
+    }
+
+    function autoAssignToBreakoutRooms() {
+        const rooms = Object.values(state.breakoutRooms).filter(room => !room.isMainRoom);
+        if (!rooms.length) return;
+        const ids = [...state.remotes.keys()];
+        for (let i = ids.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [ids[i], ids[j]] = [ids[j], ids[i]];
+        }
+        const size = Math.ceil(ids.length / rooms.length);
+        ids.forEach((id, index) => sendParticipantToRoom(id, rooms[Math.floor(index / size)].id));
+    }
+
+    function renameBreakoutRoom(room) {
+        openDialog(dialog => {
+            dialog.appendChild(el('div', 'dialog-title', t('dialog.renameBreakoutRoomTitle')));
+            const input = el('input', 'field');
+            input.value = room.name || '';
+            dialog.appendChild(input);
+            dialogActions(dialog, [
+                { label: t('dialog.Cancel'), onClick: closeDialog },
+                { label: t('dialog.Ok'), type: 'primary', onClick: () => {
+                    const name = input.value.trim();
+                    closeDialog();
+                    const api = breakoutApi();
+                    if (name && api) api.renameBreakoutRoom(room.jid, name);
+                } }
+            ]);
+        });
+    }
+
+    // moveToRoom() of breakout-rooms/actions.ts, mobile branch: leave the
+    // current conference and join the target room on the same connection.
+    async function moveToRoom(roomId) {
+        const requested = roomId || (mainRoom() && mainRoom().jid) || '';
+        // The server sends a full JID; the rooms list is keyed by its node.
+        const room = state.breakoutRooms[requested]
+            || Object.values(state.breakoutRooms).find(item => item.jid === requested || item.id === requested.split('@')[0]);
+        if (!room || !state.connection) { log('move to room: unknown room', requested); return; }
+        const target = room.jid || room.id;
+        const [node, ...domain] = target.split('@');
+        // eslint-disable-next-line no-new-wrappers
+        const roomName = new String(node);
+        roomName.domain = domain.join('@');
+        state.switchingRoom = true;
+        closeScreen();
+        if (state.whiteboardOpen) closeWhiteboard();
+        state.collabDetails = null;
+        showConnecting(t('connectingOverlay.joiningRoom'));
+        const conference = state.conference;
+        state.conference = null;
+        state.joined = false;
+        try { await conference.leave('switch_room'); } catch (error) { log('leave for room switch', error); }
+        state.remotes.forEach(p => { if (p.tracks.audio && p.tracks.audio._sink) p.tracks.audio._sink.remove(); });
+        state.remotes.clear();
+        state.dominantId = '';
+        state.pinnedId = '';
+        state.knocking.clear();
+        if (state.sharedVideo) resetSharedVideo();
+        state.switchingRoom = false;
+        joinConference(undefined, roomName);
+        showNotification({
+            title: t('breakoutRooms.notifications.joinedTitle'),
+            description: room.isMainRoom ? t('breakoutRooms.notifications.joinedMainRoom')
+                : t('breakoutRooms.notifications.joined', { name: room.name })
+        });
+    }
+
+    function openBreakoutRoomMenu(room) {
+        const moderator = isModerator();
+        const inRoom = room.id === currentRoomId();
+        openSheet(sheet => {
+            sheet.appendChild(el('div', 'sheet-title', room.isMainRoom ? t('breakoutRooms.mainRoom') : room.name));
+            if (!inRoom) sheetItem(sheet, null, t('breakoutRooms.actions.join'), () => moveToRoom(room.id));
+            if (moderator && !room.isMainRoom) {
+                sheetItem(sheet, null, t('breakoutRooms.actions.rename'), () => renameBreakoutRoom(room));
+                if (roomParticipants(room).length) sheetItem(sheet, null, t('breakoutRooms.actions.close'), () => closeBreakoutRoom(room));
+                else sheetItem(sheet, null, t('breakoutRooms.actions.remove'), () => removeBreakoutRoom(room), 'danger');
+            }
+        });
+    }
+
+    function renderBreakoutRooms() {
+        const list = $('breakout-list');
+        list.textContent = '';
+        const rooms = Object.values(state.breakoutRooms).sort((a, b) => (b.isMainRoom ? 1 : 0) - (a.isMainRoom ? 1 : 0));
+        rooms.forEach(room => {
+            const participants = roomParticipants(room);
+            const title = (room.isMainRoom ? t('breakoutRooms.mainRoom') : room.name) + ` (${participants.length})`;
+            const header = el('button', 'breakout-room');
+            header.appendChild(icon(room.collapsed ? 'arrow-down' : 'arrow-up', 'medium'));
+            header.appendChild(el('span', '', title));
+            header.addEventListener('click', () => { room.collapsed = !room.collapsed; renderBreakoutRooms(); });
+            header.addEventListener('contextmenu', event => { event.preventDefault(); openBreakoutRoomMenu(room); });
+            let pressTimer = 0;
+            header.addEventListener('pointerdown', () => { pressTimer = setTimeout(() => { pressTimer = -1; openBreakoutRoomMenu(room); }, 500); });
+            header.addEventListener('pointerup', event => { if (pressTimer === -1) event.preventDefault(); clearTimeout(pressTimer); });
+            list.appendChild(header);
+            if (!room.collapsed) {
+                participants.forEach(p => {
+                    const item = el('div', 'participant-item breakout-participant');
+                    item.appendChild(avatar({ name: p.displayName }));
+                    const details = el('div', 'details');
+                    details.appendChild(el('div', 'name', p.displayName || t('notify.somebody')));
+                    if (p.role === 'moderator') details.appendChild(el('div', 'role', t('videothumbnail.moderator')));
+                    item.appendChild(details);
+                    list.appendChild(item);
+                });
+            }
+        });
+        const footer = $('breakout-footer');
+        footer.textContent = '';
+        if (isModerator()) {
+            const add = el('button', 'button secondary wide', t('breakoutRooms.actions.add'));
+            add.addEventListener('click', createBreakoutRoom);
+            footer.appendChild(add);
+            if (rooms.some(room => !room.isMainRoom) && state.remotes.size) {
+                const assign = el('button', 'button secondary wide', t('breakoutRooms.actions.autoAssign'));
+                assign.addEventListener('click', autoAssignToBreakoutRooms);
+                footer.appendChild(assign);
+            }
+        }
+        if (isInBreakoutRoom()) {
+            const leaveRoom = el('button', 'button danger wide', t('breakoutRooms.actions.leaveBreakoutRoom'));
+            leaveRoom.addEventListener('click', () => moveToRoom());
+            footer.appendChild(leaveRoom);
+        }
+    }
+
+    // RFC 1321 MD5, used for the whiteboard collaboration room name exactly
+    // as jitsi-meet does (js-md5).
+    function md5(text) {
+        const bytes = new TextEncoder().encode(text);
+        const words = [];
+        for (let i = 0; i < bytes.length; i++) words[i >> 2] |= bytes[i] << ((i % 4) * 8);
+        const bitLength = bytes.length * 8;
+        words[bitLength >> 5] |= 0x80 << (bitLength % 32);
+        words[(((bitLength + 64) >>> 9) << 4) + 14] = bitLength;
+        const K = [];
+        for (let i = 0; i < 64; i++) K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 4294967296) | 0;
+        const S = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21];
+        let a0 = 0x67452301, b0 = 0xefcdab89 | 0, c0 = 0x98badcfe | 0, d0 = 0x10325476;
+        for (let chunk = 0; chunk < words.length; chunk += 16) {
+            let a = a0, b = b0, c = c0, d = d0;
+            for (let i = 0; i < 64; i++) {
+                let f, g;
+                if (i < 16) { f = (b & c) | (~b & d); g = i; }
+                else if (i < 32) { f = (d & b) | (~d & c); g = (5 * i + 1) % 16; }
+                else if (i < 48) { f = b ^ c ^ d; g = (3 * i + 5) % 16; }
+                else { f = c ^ (b | ~d); g = (7 * i) % 16; }
+                const s = S[(i >> 4) * 4 + (i % 4)];
+                const sum = (a + f + K[i] + (words[chunk + g] | 0)) | 0;
+                a = d; d = c; c = b;
+                b = (b + ((sum << s) | (sum >>> (32 - s)))) | 0;
+            }
+            a0 = (a0 + a) | 0; b0 = (b0 + b) | 0; c0 = (c0 + c) | 0; d0 = (d0 + d) | 0;
+        }
+        return [a0, b0, c0, d0].map(n => {
+            let hex = '';
+            for (let i = 0; i < 4; i++) hex += ((n >> (i * 8)) & 0xff).toString(16).padStart(2, '0');
+            return hex;
+        }).join('');
     }
 
     function invite() {
@@ -1067,6 +2040,42 @@
         return options;
     }
 
+    let reconnectTimer = 0;
+
+    // PageReloadDialog of jitsi-meet: "Something went wrong", a 10-30 s
+    // countdown to the next attempt, Cancel (leave) and Rejoin now. retry
+    // defaults to opening the XMPP connection again.
+    function scheduleReconnect(retry) {
+        state.retries++;
+        clearInterval(reconnectTimer);
+        hideConnecting();
+        showNotification({ key: 'connection-failed', type: 'error', title: t('notify.connectionFailed'), timeout: 10000 });
+        let seconds = 10 + Math.floor(Math.random() * 21);
+        let text = null;
+        const rejoin = async () => {
+            clearInterval(reconnectTimer);
+            closeDialog();
+            showConnecting(t('connectingOverlay.joiningRoom'));
+            if (retry) { retry(); return; }
+            await disconnect(true);
+            if (!state.leaving) connect();
+        };
+        openDialog(dialog => {
+            dialog.appendChild(el('div', 'dialog-title', t('dialog.conferenceReloadTitle')));
+            text = el('div', 'dialog-text', t('dialog.conferenceReloadMsg', { seconds }));
+            dialog.appendChild(text);
+            dialogActions(dialog, [
+                { label: t('dialog.Cancel'), onClick: () => { clearInterval(reconnectTimer); closeDialog(); leave('cancel'); } },
+                { label: t('dialog.rejoinNow'), type: 'primary', onClick: rejoin }
+            ]);
+        });
+        reconnectTimer = setInterval(() => {
+            seconds--;
+            if (seconds > 0) { text.textContent = t('dialog.conferenceReloadMsg', { seconds }); return; }
+            rejoin();
+        }, 1000);
+    }
+
     function showConnecting(text) {
         $('connecting').hidden = false;
         $('connecting-text').textContent = text || '';
@@ -1082,43 +2091,64 @@
             if (state.connection === connection) joinConference();
         });
         connection.addEventListener(E.CONNECTION_FAILED, (error, message, credentials, details) => {
-            if (state.connection !== connection) return;
-            console.warn('connection failed', error, message);
-            if (error === JitsiMeetJS.errors.connection.PASSWORD_REQUIRED) {
-                showWaitForOwner(true);
+            if (state.connection !== connection || state.leaving) return;
+            const errors = JitsiMeetJS.errors.connection;
+            log('connection failed', error, message, details || '', 'jwt:', !!state.jwt, 'joined:', state.joined);
+            if (error === errors.PASSWORD_REQUIRED) {
+                // The server drops this connection right after; that is not
+                // a network failure to reconnect from.
+                state.connection = null;
+                hideConnecting();
+                if (state.credentials) {
+                    // LoginDialog: the credentials the user typed were refused.
+                    const username = state.credentials.username;
+                    state.credentials = null;
+                    loginDialog({ username, message: t('dialog.incorrectPassword') });
+                } else if (state.jwt) {
+                    // The server refused the token: forget it and offer the sign-in again.
+                    state.jwt = '';
+                    notify('token', { jwt: '' });
+                    confirmDialog({ title: t('dialog.tokenAuthFailedTitle'), text: t('dialog.tokenAuthFailed'), cancelLabel: null,
+                        onConfirm: showWaitForOwner });
+                } else login();
                 return;
             }
-            fatal(t('dialog.conferenceReloadTitle'), message || error);
+            // A dropped XMPP connection is retried, like jitsi-meet's reload
+            // overlay does, before giving up.
+            scheduleReconnect();
         });
         connection.addEventListener(E.CONNECTION_DISCONNECTED, () => {
-            if (state.connection === connection && !state.leaving) console.info('connection closed');
+            if (state.connection === connection && !state.leaving) log('connection closed');
         });
-        connection.connect();
+        connection.connect(state.credentials ? { id: state.credentials.id, password: state.credentials.password } : undefined);
     }
 
-    function joinConference(password) {
+    function joinConference(password, roomOverride) {
         const config = state.serverConfig;
+        if (roomOverride !== undefined) state.roomName = roomOverride;
         const C = JitsiMeetJS.events.conference;
         const options = Object.assign({}, config, {
             confID: `${new URL(cfg.server).host}/${backendSafeRoomName(cfg.room)}`,
             statisticsDisplayName: cfg.displayName
         });
         if (prefs.disableP2p) options.p2p = Object.assign({}, config.p2p, { enabled: false });
-        const conference = state.connection.initJitsiConference(backendSafeRoomName(cfg.room), options);
+        const conference = state.connection.initJitsiConference(state.roomName || backendSafeRoomName(cfg.room), options);
         state.conference = conference;
+        // Events of a conference left for a breakout room are ignored.
+        const on = (event, handler) => conference.on(event, (...args) => { if (state.conference === conference) handler(...args); });
 
-        conference.on(C.CONFERENCE_JOINED, onConferenceJoined);
-        conference.on(C.CONFERENCE_FAILED, onConferenceFailed);
-        conference.on(C.CONFERENCE_ERROR, error => console.warn('conference error', error));
-        conference.on(C.CONFERENCE_LEFT, () => { if (!state.leaving) leave('left'); });
-        conference.on(C.KICKED, (actor, reason) => {
+        on(C.CONFERENCE_JOINED, onConferenceJoined);
+        on(C.CONFERENCE_FAILED, onConferenceFailed);
+        on(C.CONFERENCE_ERROR, error => log('conference error', error));
+        on(C.CONFERENCE_LEFT, () => { if (!state.leaving) leave('left'); });
+        on(C.KICKED, (actor, reason) => {
             const name = actor && actor.getDisplayName ? actor.getDisplayName() : '';
             state.leaving = true;
             confirmDialog({ title: t('dialog.kickTitle', { participantDisplayName: name || t('notify.somebody') }),
                 text: reason || t('dialog.kickMessage', { participantDisplayName: name || t('notify.somebody') }),
                 cancelLabel: null, onConfirm: () => finish('kicked') });
         });
-        conference.on(C.USER_JOINED, (id, participant) => {
+        on(C.USER_JOINED, (id, participant) => {
             const p = {
                 id, name: participant.getDisplayName(), role: participant.getRole(), tracks: {},
                 raisedHand: isRaised(participant.getProperty && participant.getProperty('raisedHand')), avatarURL: ''
@@ -1126,24 +2156,27 @@
             state.remotes.set(id, p);
             if (state.joined && !participant.isHidden()) {
                 showNotification({ key: 'joined', title: t('notify.connectedOneMember', { name: displayNameOf(p) }) });
+                playSound('joined');
             }
             render();
         });
-        conference.on(C.USER_LEFT, id => {
+        on(C.USER_LEFT, id => {
             const p = state.remotes.get(id);
             if (!p) return;
             state.remotes.delete(id);
             if (state.pinnedId === id) state.pinnedId = '';
             if (state.dominantId === id) state.dominantId = '';
+            if (state.sharedVideo && state.sharedVideo.ownerId === id) resetSharedVideo();
             if (p.tracks.audio && p.tracks.audio._sink) p.tracks.audio._sink.remove();
             showNotification({ key: 'left', title: t('notify.leftOneMember', { name: displayNameOf(p) }) });
+            playSound('left');
             render();
         });
-        conference.on(C.DISPLAY_NAME_CHANGED, (id, name) => {
+        on(C.DISPLAY_NAME_CHANGED, (id, name) => {
             const p = person(id);
             if (p && !p.local) { p.name = name; render(); }
         });
-        conference.on(C.USER_ROLE_CHANGED, (id, role) => {
+        on(C.USER_ROLE_CHANGED, (id, role) => {
             if (id === state.localId) {
                 const was = state.local.role;
                 state.local.role = role;
@@ -1151,13 +2184,13 @@
             } else if (state.remotes.has(id)) state.remotes.get(id).role = role;
             render();
         });
-        conference.on(C.DOMINANT_SPEAKER_CHANGED, id => {
+        on(C.DOMINANT_SPEAKER_CHANGED, id => {
             state.dominantId = id;
             render();
         });
-        conference.on(C.TRACK_ADDED, onTrackAdded);
-        conference.on(C.TRACK_REMOVED, onTrackRemoved);
-        conference.on(C.TRACK_MUTE_CHANGED, (track, actor) => {
+        on(C.TRACK_ADDED, onTrackAdded);
+        on(C.TRACK_REMOVED, onTrackRemoved);
+        on(C.TRACK_MUTE_CHANGED, (track, actor) => {
             if (track.isLocal()) {
                 if (track.getType() === 'audio') state.audioMuted = track.isMuted();
                 else if (track.getType() === 'video') state.videoMuted = track.isMuted();
@@ -1169,18 +2202,18 @@
             }
             render();
         });
-        conference.on(C.MESSAGE_RECEIVED, (id, text, ts, nick) => {
+        on(C.MESSAGE_RECEIVED, (id, text, ts, nick) => {
             const local = id === state.localId;
             const p = person(id);
             addMessage({ local, from: id, name: local ? displayNameOf(state.local) : (p ? displayNameOf(p) : (nick || t('notify.somebody'))),
                 text, ts: ts ? new Date(ts).getTime() || Date.now() : Date.now() });
         });
-        conference.on(C.PRIVATE_MESSAGE_RECEIVED, (id, text, ts) => {
+        on(C.PRIVATE_MESSAGE_RECEIVED, (id, text, ts) => {
             const p = person(id);
             addMessage({ local: false, from: id, name: p ? displayNameOf(p) : t('notify.somebody'), text,
                 ts: ts ? new Date(ts).getTime() || Date.now() : Date.now(), privateFrom: id });
         });
-        conference.on(C.PARTICIPANT_PROPERTY_CHANGED, (participant, name, oldValue, value) => {
+        on(C.PARTICIPANT_PROPERTY_CHANGED, (participant, name, oldValue, value) => {
             if (name !== 'raisedHand') return;
             const p = state.remotes.get(participant.getId());
             if (!p) return;
@@ -1191,24 +2224,25 @@
             p.raisedHand = raised;
             render();
         });
-        conference.on(C.ENDPOINT_MESSAGE_RECEIVED, (participant, payload) => {
+        on(C.ENDPOINT_MESSAGE_RECEIVED, (participant, payload) => {
             if (payload && payload.name === 'endpoint-reaction' && Array.isArray(payload.reactions)) {
                 payload.reactions.forEach(showReaction);
             }
         });
-        conference.on(C.CONFERENCE_CREATED_TIMESTAMP, ts => {
+        on(C.CONFERENCE_CREATED_TIMESTAMP, ts => {
             state.startedAt = ts || Date.now();
             render();
         });
-        conference.on(C.LOCK_STATE_CHANGED, locked => {
+        on(C.LOCK_STATE_CHANGED, locked => {
             if (locked && !state.locked && state.joined && !state.roomPassword) showNotification({ title: t('notify.passwordSetRemotely') });
             state.locked = locked;
             if (!locked) state.roomPassword = '';
         });
-        conference.on(C.MEMBERS_ONLY_CHANGED, enabled => { state.lobbyEnabled = enabled; });
-        conference.on(C.LOBBY_USER_JOINED, (id, name) => {
+        on(C.MEMBERS_ONLY_CHANGED, enabled => { state.lobbyEnabled = enabled; });
+        on(C.LOBBY_USER_JOINED, (id, name) => {
             state.knocking.set(id, { id, name, tracks: {}, role: 'none' });
             if (isModerator()) {
+                playSound('knock');
                 showNotification({ key: 'knock-' + id, title: t('lobby.knockTitle'), description: name, timeout: 15000, actions: [
                     { label: t('participantsPane.actions.reject'), onClick: () => rejectKnocking(id) },
                     { label: t('participantsPane.actions.admit'), onClick: () => admitKnocking(id) }
@@ -1216,17 +2250,32 @@
             }
             if (state.screen === 'participants') renderParticipants();
         });
-        conference.on(C.LOBBY_USER_UPDATED, (id, participant) => {
+        on(C.LOBBY_USER_UPDATED, (id, participant) => {
             const knocker = state.knocking.get(id);
             if (knocker && participant && participant.name) knocker.name = participant.name;
         });
-        conference.on(C.LOBBY_USER_LEFT, id => {
+        on(C.LOBBY_USER_LEFT, id => {
             state.knocking.delete(id);
             if (state.screen === 'participants') renderParticipants();
         });
-        conference.on(C.CONNECTION_INTERRUPTED, () => showNotification({ key: 'connection', type: 'warning',
+        on(C.BREAKOUT_ROOMS_UPDATED, ({ rooms, roomCounter }) => {
+            const collapsed = {};
+            Object.values(state.breakoutRooms).forEach(room => { collapsed[room.id] = room.collapsed; });
+            state.breakoutRooms = rooms || {};
+            Object.values(state.breakoutRooms).forEach(room => { room.collapsed = collapsed[room.id]; });
+            if (typeof roomCounter === 'number') state.roomCounter = Math.max(state.roomCounter, roomCounter);
+            if (state.screen === 'breakout') renderBreakoutRooms();
+            if (state.screen === 'participants') renderParticipants();
+            render();
+        });
+        on(C.BREAKOUT_ROOMS_MOVE_TO_ROOM, roomId => moveToRoom(roomId));
+        on(C.METADATA_UPDATED, onMetadataUpdated);
+        on(C.AV_MODERATION_CHANGED, ({ enabled, mediaType }) => {
+            if (mediaType === 'audio' || mediaType === 'video') state.avModeration[mediaType] = !!enabled;
+        });
+        on(C.CONNECTION_INTERRUPTED, () => showNotification({ key: 'connection', type: 'warning',
             title: t('dialog.conferenceDisconnectTitle'), description: t('notify.disconnected'), timeout: 10000 }));
-        conference.on(C.CONNECTION_RESTORED, () => {
+        on(C.CONNECTION_RESTORED, () => {
             const node = document.querySelector('[data-key="connection"]');
             if (node) node.remove();
         });
@@ -1234,6 +2283,7 @@
             const p = state.remotes.get(id);
             if (p && data.value !== p.avatarURL) { p.avatarURL = data.value; p.explicitAvatar = !!data.value; render(); }
         });
+        conference.addCommandListener('shared-video', (data, from) => { if (state.conference === conference) onSharedVideoCommand(data, from); });
         conference.addCommandListener('email', (data, id) => {
             const p = state.remotes.get(id);
             if (!p || p.explicitAvatar) return;
@@ -1245,7 +2295,7 @@
         if (cfg.email) conference.sendCommand('email', { value: cfg.email });
         if (state.local.raisedHand) conference.setLocalParticipantProperty('raisedHand', Date.now());
         ['audio', 'video'].forEach(type => {
-            if (state.local.tracks[type]) conference.addTrack(state.local.tracks[type]).catch(error => console.warn('addTrack', error));
+            if (state.local.tracks[type]) conference.addTrack(state.local.tracks[type]).catch(error => log('addTrack', error));
         });
         showConnecting(t('connectingOverlay.joiningRoom'));
         conference.join(password);
@@ -1259,23 +2309,33 @@
         state.local.role = conference.isModerator() ? 'moderator' : 'participant';
         state.lobbyEnabled = conference.isMembersOnly ? conference.isMembersOnly() : false;
         state.waiting = null;
+        stopWaitForOwner();
         $('waiting').hidden = true;
         hideConnecting();
         closeDialog();
         if (!state.startedAt) state.startedAt = Date.now();
+        state.retries = 0;
+        const metadata = conference.getMetadataHandler && conference.getMetadataHandler();
+        if (metadata && metadata.isSupported()) {
+            const whiteboard = (metadata.getMetadata() || {}).whiteboard;
+            state.collabDetails = whiteboard && whiteboard.collabDetails || null;
+        }
+        if (typeof conference.isAVModerationEnabled === 'function') {
+            state.avModeration = { audio: !!conference.isAVModerationEnabled('audio'), video: !!conference.isAVModerationEnabled('video') };
+        }
+        if (state.audioOnly) showExpandedLabel('audio-only');
         notify('joined', { id: state.localId });
         render();
     }
 
     function onConferenceFailed(error, ...params) {
         const E = JitsiMeetJS.errors.conference;
-        console.warn('conference failed', error, params);
+        log('conference failed', error, params);
         hideConnecting();
         switch (error) {
         case E.MEMBERS_ONLY_ERROR: {
             const waitingForHost = !!params[1];
             showWaiting(waitingForHost);
-            if (waitingForHost && state.serverConfig.tokenAuthUrl && !state.jwt) showWaitForOwner(false);
             state.conference.joinLobby(cfg.displayName || '', cfg.email || '');
             break;
         }
@@ -1289,8 +2349,7 @@
             });
             break;
         case E.AUTHENTICATION_REQUIRED:
-            showWaiting(true);
-            showWaitForOwner(false);
+            waitForOwner();
             break;
         case E.CONFERENCE_ACCESS_DENIED:
             fatal(t('lobby.joinRejectedTitle'), t('lobby.joinRejectedMessage'));
@@ -1300,6 +2359,13 @@
             break;
         case E.CONFERENCE_MAX_USERS:
             fatal(t('dialog.maxUsersLimitReachedTitle'), t('dialog.maxUsersLimitReached'));
+            break;
+        case E.CONNECTION_ERROR:
+        case E.FOCUS_DISCONNECTED:
+        case E.FOCUS_LEFT:
+        case E.ICE_FAILED:
+        case E.VIDEOBRIDGE_NOT_AVAILABLE:
+            scheduleReconnect();
             break;
         default:
             fatal(t('dialog.conferenceReloadTitle'), String(error));
@@ -1319,10 +2385,10 @@
             : t('lobby.joiningMessage');
         const panel = document.querySelector('.waiting-panel');
         panel.querySelectorAll('.button').forEach(node => node.remove());
-        if (waitingForHost && state.serverConfig.tokenAuthUrl) {
-            const login = el('button', 'button primary wide', t('dialog.IamHost'));
-            login.addEventListener('click', startTokenAuth);
-            panel.appendChild(login);
+        if (waitingForHost) {
+            const iAmHost = el('button', 'button primary wide', t('dialog.IamHost'));
+            iAmHost.addEventListener('click', login);
+            panel.appendChild(iAmHost);
         }
         if (!waitingForHost) {
             const passwordButton = el('button', 'button secondary wide', t('lobby.enterPasswordButton'));
@@ -1337,20 +2403,127 @@
         panel.appendChild(leaveButton);
     }
 
-    // Mirrors WaitForOwnerDialog.native: "I am the host" or keep waiting.
-    function showWaitForOwner(connectionLevel) {
-        if (!state.serverConfig.tokenAuthUrl) {
-            if (connectionLevel) fatal(t('dialog.conferenceReloadTitle'), t('dialog.WaitForHostNoAuthMsg'));
-            return;
-        }
-        if (connectionLevel) showWaiting(true);
+    // WAIT_FOR_OWNER of authentication/middleware.any.ts: the join is retried
+    // every 5 s (checkIfCanJoin) and WaitForOwnerDialog stays over the
+    // conference unless the LoginDialog is open.
+    function waitForOwner() {
+        clearTimeout(state.waitForOwnerTimer);
+        state.waitForOwnerTimer = setTimeout(() => {
+            state.waitForOwnerTimer = 0;
+            if (state.conference && !state.joined && !state.leaving && !state.upgradeProcess) {
+                state.conference.join(state.roomPassword || undefined);
+            }
+        }, 5000);
+        const kind = $('dialog').hidden ? '' : $('dialog').dataset.kind;
+        if (kind !== 'login' && kind !== 'waitForOwner') showWaitForOwner();
+    }
+
+    function stopWaitForOwner() {
+        clearTimeout(state.waitForOwnerTimer);
+        state.waitForOwnerTimer = 0;
+    }
+
+    // WaitForOwnerDialog.native: Cancel leaves the meeting, "I am the host"
+    // opens the sign-in.
+    function showWaitForOwner() {
         confirmDialog({
-            title: t('dialog.WaitingForHostTitle'),
+            kind: 'waitForOwner',
             text: t('lobby.waitForModerator'),
             confirmLabel: t('dialog.IamHost'),
-            cancelLabel: t('dialog.WaitingForHostButton'),
-            onConfirm: startTokenAuth
+            cancelLabel: t('dialog.Cancel'),
+            onConfirm: login,
+            onCancel: () => { stopWaitForOwner(); leave('cancel'); }
         });
+    }
+
+    // _handleLogin: the server's sign-in page when token authentication is
+    // configured, otherwise the username/password LoginDialog.
+    function login() {
+        if (state.serverConfig.tokenAuthUrl) startTokenAuth();
+        else loginDialog();
+    }
+
+    // toJid of base/connection/functions.ts.
+    function toJid(id) {
+        const hosts = state.serverConfig.hosts || {};
+        return id.indexOf('@') < 0 ? `${id}@${hosts.authdomain || hosts.domain}` : id;
+    }
+
+    // LoginDialog.native: username and password; with a conference the role
+    // is upgraded (authenticateAndUpgradeRole), otherwise the XMPP
+    // connection is opened again with the credentials.
+    function loginDialog(options = {}) {
+        openDialog(dialog => {
+            dialog.dataset.kind = 'login';
+            dialog.appendChild(el('div', 'dialog-title', t('dialog.login')));
+            const username = el('input', 'field');
+            username.type = 'text';
+            username.autocapitalize = 'none';
+            username.autocomplete = 'username';
+            username.spellcheck = false;
+            username.placeholder = 'user@domain.com';
+            username.value = options.username || '';
+            const password = el('input', 'field');
+            password.type = 'password';
+            password.autocomplete = 'current-password';
+            password.placeholder = t('dialog.userPassword');
+            const message = el('div', 'dialog-text', options.message || '');
+            dialog.append(username, password, message);
+            const row = dialogActions(dialog, [
+                { label: t('dialog.Cancel'), onClick: () => { closeDialog(); cancelLogin(); } },
+                { label: t('dialog.Ok'), type: 'primary', onClick: () => submit() }
+            ]);
+            const ok = row.lastChild;
+            password.addEventListener('keydown', event => { if (event.key === 'Enter') submit(); });
+            username.addEventListener('keydown', event => { if (event.key === 'Enter') password.focus(); });
+
+            function submit() {
+                const name = username.value.trim();
+                if (!name || ok.disabled) return;
+                const id = toJid(name);
+                if (!state.conference) {
+                    closeDialog();
+                    state.credentials = { id, username: name, password: password.value };
+                    showConnecting(t('connection.CONNECTING'));
+                    connect();
+                    return;
+                }
+                ok.disabled = true;
+                message.textContent = t('connection.CONNECTING');
+                const process = state.conference.authenticateAndUpgradeRole({
+                    id,
+                    password: password.value,
+                    onLoginSuccessful: () => { message.textContent = t('connection.FETCH_SESSION_ID'); }
+                });
+                state.upgradeProcess = process;
+                process.then(() => {
+                    if (state.upgradeProcess !== process) return;
+                    state.upgradeProcess = null;
+                    state.credentials = { id, username: name, password: password.value };
+                    if (dialog.dataset.kind === 'login') closeDialog();
+                }, error => {
+                    if (state.upgradeProcess !== process) return;
+                    state.upgradeProcess = null;
+                    // The lack of an error signals a cancellation.
+                    if (!error) return;
+                    log('authenticateAndUpgradeRole failed', JSON.stringify(error));
+                    ok.disabled = false;
+                    message.textContent = error.authenticationError
+                        ? t('dialog.incorrectPassword')
+                        : t('dialog.connectErrorWithMsg', { msg: String(error.connectionError || error.message || error.error || '') });
+                });
+            }
+        });
+    }
+
+    // CANCEL_LOGIN: back to WaitForOwnerDialog while waiting for the host,
+    // out of the meeting when the connection itself needed the login.
+    function cancelLogin() {
+        const process = state.upgradeProcess;
+        state.upgradeProcess = null;
+        if (process && process.cancel) process.cancel();
+        if (state.waitForOwnerTimer) showWaitForOwner();
+        else if (!state.conference && !state.joined) leave('cancel');
     }
 
     function tokenAuthUrl() {
@@ -1464,22 +2637,8 @@
         $('tb-camera').addEventListener('click', switchCamera);
         $('tb-participants').addEventListener('click', () => openScreen('participants'));
         $('sheet-backdrop').addEventListener('click', closeSheet);
-        $('insecure-label').addEventListener('click', event => {
-            event.stopPropagation();
-            const label = $('expanded-label');
-            if (!label.hidden) { label.hidden = true; return; }
-            label.textContent = '';
-            // getUnsafeRoomText(): the web string carries the localized "here" link.
-            const text = t('security.insecureRoomNameWarningWeb', { recommendAction: t('security.unsafeRoomActions.meeting') });
-            const match = text.match(/^([\s\S]*?)<a[^>]*>([\s\S]*?)<\/a>([\s\S]*)$/);
-            label.appendChild(document.createTextNode(match ? match[1] : text));
-            const link = el('a', '', match ? match[2] : '');
-            link.href = '#';
-            link.addEventListener('click', e => { e.preventDefault(); notify('openUrl', { url: cfg.securityHelpUrl }); });
-            label.appendChild(link);
-            if (match) label.appendChild(document.createTextNode(match[3]));
-            label.hidden = false;
-        });
+        $('insecure-label').addEventListener('click', event => { event.stopPropagation(); showExpandedLabel('insecure'); });
+        $('audio-only-label').addEventListener('click', event => { event.stopPropagation(); showExpandedLabel('audio-only'); });
         $('expanded-label').addEventListener('click', event => { if (event.target.tagName !== 'A') $('expanded-label').hidden = true; });
         document.addEventListener('click', event => {
             const target = event.target.closest('[data-action]');
@@ -1490,8 +2649,17 @@
             case 'clear-recipient': state.privateRecipient = null; renderChat(); break;
             case 'mute-all': muteAll(); break;
             case 'moderation-menu': openModerationMenu(); break;
+            case 'breakout-rooms': openScreen('breakout'); break;
             }
         });
+        let gifTimer = 0;
+        $('gif-search').addEventListener('input', event => {
+            clearTimeout(gifTimer);
+            gifTimer = setTimeout(() => loadGifs(event.target.value.trim()), 400);
+        });
+        const search = $('participants-search');
+        search.placeholder = t('participantsPane.search');
+        search.addEventListener('input', () => { state.participantFilter = search.value; renderParticipants(); });
         const input = $('chat-input');
         input.placeholder = t('chat.fieldPlaceHolder');
         input.addEventListener('input', () => { $('chat-send').disabled = !input.value.trim(); });
@@ -1516,16 +2684,24 @@
         translateStatic(document);
         setupIcons(document);
         bindStatic();
-        showConnecting(t('connectingOverlay.joiningRoom'));
         render();
+        loadServer();
+    }
+
+    // config.js and lib-jitsi-meet come from the Jitsi server; when it cannot
+    // be reached the reload dialog counts down to the next attempt.
+    async function loadServer() {
+        showConnecting(t('connectingOverlay.joiningRoom'));
         try {
             await loadScript(cfg.server + '/config.js');
             state.serverConfig = Object.assign({}, window.config || {});
-            await loadScript(cfg.server + '/libs/lib-jitsi-meet.min.js');
+            if (!window.JitsiMeetJS) await loadScript(cfg.server + '/libs/lib-jitsi-meet.min.js', 60000);
         } catch (error) {
-            fatal(t('dialog.serviceUnavailable'), t('dialog.conferenceReloadTitle'));
+            log('server unavailable', error.message);
+            if (!state.leaving) scheduleReconnect(loadServer);
             return;
         }
+        if (state.leaving) return;
         JitsiMeetJS.init(Object.assign({}, state.serverConfig, { enableAnalyticsLogging: false, disableThirdPartyRequests: true }));
         JitsiMeetJS.setLogLevel(JitsiMeetJS.logLevels.WARN);
         const wanted = [];
@@ -1536,7 +2712,7 @@
             try {
                 state.local.tracks[type] = await createTrack(type);
             } catch (error) {
-                console.warn('local track', type, error);
+                log('local track', type, error);
                 if (type === 'audio') state.audioMuted = true;
                 else state.videoMuted = true;
             }
@@ -1548,6 +2724,7 @@
     window.auroraCall = {
         setToken,
         hangup: () => leave('hangup'),
+        whiteboardClosed: () => { state.whiteboardOpen = false; },
         back: () => {
             if (!$('dialog').hidden) { closeDialog(); return true; }
             if (!$('sheet').hidden) { closeSheet(); return true; }

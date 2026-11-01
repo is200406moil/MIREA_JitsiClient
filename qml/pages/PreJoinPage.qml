@@ -2,6 +2,10 @@ import QtQuick 2.6
 import Sailfish.Silica 1.0
 import "../components"
 
+// Prejoin.native: the upper half shows the camera (or the avatar) with the
+// room name, the lower half the microphone/camera toolbox, the display name
+// and the "Join meeting" / "Join in low bandwidth mode" buttons. A short room
+// name first shows UnsafeRoomWarning.native.
 Page {
     id: page
     objectName: "preJoinPage"
@@ -15,77 +19,78 @@ Page {
     property bool previewAllowed: true
     property bool previewUnavailable: false
     property bool requestedVideoOff: false
-    property bool unsafeWarningOpen: false
-    property bool unsafeWarningAccepted: false
-    property bool pendingWithoutVideo: false
-    Component.onCompleted: page.unsafeWarningOpen = page.unsafeRoomName
+    property bool requestedAudioOnly: false
+    property bool unsafeWarningOpen: unsafeRoomName
     readonly property bool unsafeRoomName: page.room && page.room.name && page.room.name.trim().length > 0 && page.room.name.trim().length <= 8
-    Rectangle { anchors.fill: parent; color: AppStyle.background }
+
     function resetPreview() {
         page.joining = false
         page.previewUnavailable = false
         page.previewAllowed = true
     }
-    function join(withoutVideo) {
+
+    function join(lowBandwidth) {
         if (page.joining) return
-        if (page.unsafeRoomName && !page.unsafeWarningAccepted) {
-            page.pendingWithoutVideo = withoutVideo
-            page.unsafeWarningOpen = true
-            return
-        }
         if (!appState.saveProfile(nameField.text, appState.email)) {
             page.formError = appState.lastError
             return
         }
-        page.requestedVideoOff = withoutVideo || page.muteVideo
+        page.requestedVideoOff = lowBandwidth || page.muteVideo
+        page.requestedAudioOnly = lowBandwidth
         page.joining = true
         if (previewLoader.item) previewLoader.item.release()
         page.previewAllowed = false
         joinTimer.start()
     }
+
+    // The camera is released first so that the call page can open it.
     Timer {
         id: joinTimer
         interval: 1500
         onTriggered: {
-            if (!appState.startMeeting(page.room, page.muteAudio, page.requestedVideoOff)) {
+            if (!appState.startMeeting(page.room, page.muteAudio, page.requestedVideoOff, page.requestedAudioOnly)) {
                 page.joining = false
                 page.previewAllowed = true
                 page.formError = appState.lastError
                 return
             }
-        pageStack.push(Qt.resolvedUrl("RoomPage.qml"), {
-            roomName: page.room.name, serverAddress: page.room.server,
-            initialAudioMuted: page.muteAudio, initialVideoMuted: page.requestedVideoOff,
-            previousPage: page, returnPage: page.mainPage
-        })
+            pageStack.push(Qt.resolvedUrl("RoomPage.qml"), {
+                roomName: page.room.name, serverAddress: page.room.server,
+                initialAudioMuted: page.muteAudio, initialVideoMuted: page.requestedVideoOff,
+                previousPage: page, returnPage: page.mainPage
+            })
         }
     }
+
+    Rectangle { anchors.fill: parent; color: AppStyle.background }
+
     Item {
-    id: viewport
-    width: page.width / 2
-    height: page.height / 2
-    scale: 2
-    transformOrigin: Item.TopLeft
-    Item {
-        anchors.fill: parent
-        Item {
+        id: viewport
+        width: page.width / AppStyle.dp
+        height: page.height / AppStyle.dp
+        scale: AppStyle.dp
+        transformOrigin: Item.TopLeft
+
+        ScreenHeader {
             id: header
-            width: parent.width; height: 56
-            Rectangle { anchors.fill: parent; color: AppStyle.surface }
-            BackgroundItem {
-                width: 40; height: parent.height
-                Label { anchors.centerIn: parent; text: "×"; color: AppStyle.text; font.pixelSize: 24 }
-                onClicked: pageStack.pop()
-            }
-            Label { x: 40; anchors.verticalCenter: parent.verticalCenter; text: qsTr("Присоединиться к встрече"); color: AppStyle.text; font.pixelSize: 16; font.bold: true }
+            z: 2
+            title: appState.t("prejoin.joinMeeting")
+            showBack: true
+            closeIcon: true
+            onBackClicked: pageStack.pop()
         }
-        Rectangle {
-            id: preview
-            anchors.top: header.bottom
-            width: parent.width
-            height: page.isLandscape ? viewport.height * 0.35 : viewport.height * 0.47
-            color: page.muteVideo ? AppStyle.background : AppStyle.surface
-            Avatar { anchors.centerIn: parent; width: Math.min(parent.width / 3, 144); name: nameField.text; imageUrl: appState.avatarUrl }
+
+        // largeVideoContainer: 50 % of the screen.
+        Item {
+            id: largeVideo
+            anchors { top: header.bottom; left: parent.left; right: parent.right }
+            height: (viewport.height - header.height) / 2
+            Avatar {
+                anchors.centerIn: parent
+                width: Math.min(parent.height * 0.6, 160)
+                name: nameField.text
+                imageUrl: appState.avatarUrl
+            }
             Loader {
                 id: previewLoader
                 anchors.fill: parent
@@ -93,121 +98,179 @@ Page {
                 source: Qt.resolvedUrl("../components/CameraPreview.qml")
                 onLoaded: item.unavailable.connect(function() { page.previewUnavailable = true })
             }
+            // conferenceInfo + displayRoomNameBackdrop
             Rectangle {
-                anchors { top: parent.top; topMargin: 16; horizontalCenter: parent.horizontalCenter }
-                width: roomCaption.implicitWidth + 24; height: 32; radius: 4
-                color: page.muteVideo ? "transparent" : "#AA000000"
-                Label { id: roomCaption; anchors.centerIn: parent; text: page.room.name; color: AppStyle.muted; font.pixelSize: 16; font.bold: true }
-            }
-        }
-        Rectangle {
-            y: viewport.height * 0.64
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: 112; height: 48; radius: 4; color: AppStyle.surface
-            Row {
-                anchors.fill: parent
-                Repeater {
-                    model: 2
-                    delegate: BackgroundItem {
-                        width: 56; height: 48
-                        Icon { anchors.centerIn: parent; width: 24; height: 24; color: AppStyle.text; source: Qt.resolvedUrl("../icons/" + (index === 0 ? (page.muteAudio ? "mic-slash" : "mic") : (page.muteVideo ? "video-off" : "video")) + ".svg") }
-                        onClicked: {
-                            if (index === 0) page.muteAudio = !page.muteAudio
-                            else { page.muteVideo = !page.muteVideo; if (!page.muteVideo) page.previewUnavailable = false }
-                        }
-                    }
+                anchors { top: parent.top; topMargin: 24; horizontalCenter: parent.horizontalCenter }
+                width: Math.min(roomName.implicitWidth + 48, 273)
+                height: roomName.height + 8
+                radius: 6
+                color: Qt.rgba(4 / 255, 4 / 255, 4 / 255, 0.7)
+                // numberOfLines = 1: one line, ellipsis at the end.
+                Label {
+                    id: roomName
+                    anchors.centerIn: parent
+                    width: Math.min(implicitWidth, 273 - 48)
+                    text: page.room ? page.room.name : ""
+                    color: AppStyle.text
+                    font.pixelSize: 20
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                    horizontalAlignment: Text.AlignHCenter
                 }
             }
         }
-        JitsiField {
-            id: nameField
-            y: viewport.height * 0.72
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: parent.width * 0.585
-            text: appState.displayName
-            placeholderText: qsTr("Пожалуйста, введите свое имя")
-            centered: true
-            onAccepted: page.join(false)
-        }
-        AppButton {
-            y: viewport.height * 0.78
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: parent.width * 0.585; height: 40
-            text: qsTr("Присоединиться к встрече")
-            enabled: !page.joining
-            onClicked: page.join(false)
-        }
-        BackgroundItem {
-            y: viewport.height * 0.84
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: parent.width * 0.585; height: 40
-            enabled: !page.joining
-            Label { anchors.centerIn: parent; text: qsTr("Присоединиться без видео"); color: AppStyle.text; font.pixelSize: 12 }
-            onClicked: page.join(true)
-        }
-        Label { x: 16; y: viewport.height * 0.91; width: parent.width - 32; text: page.formError; visible: text.length > 0; color: AppStyle.danger; wrapMode: Text.Wrap; font.pixelSize: 12 }
-    }
-    }
-    Item {
-        id: unsafeWarning
-        anchors.fill: parent
-        z: 100
-        visible: page.unsafeWarningOpen
-        Rectangle { anchors.fill: parent; color: AppStyle.surface }
+
+        // contentContainer: the other half, content centred.
         Rectangle {
-            width: parent.width; height: 90; color: AppStyle.surface
-            BackgroundItem {
-                width: 80; height: parent.height
-                Accessible.role: Accessible.Button
-                Accessible.name: qsTr("Закрыть")
-                Label { anchors.centerIn: parent; text: "×"; color: AppStyle.text; font.pixelSize: 48 }
-                onClicked: pageStack.pop()
-            }
-            Label {
-                x: 80; anchors.verticalCenter: parent.verticalCenter
-                text: qsTr("Присоединиться к встрече")
-                color: AppStyle.text
-                font.pixelSize: 32
+            anchors { top: largeVideo.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
+            color: AppStyle.background
+            Column {
+                anchors.centerIn: parent
+                width: Math.min(352, parent.width - 32)
+                spacing: 0
+
+                // toolboxContainer: ui01, radius 6, 60 dp, mic and camera buttons.
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 160
+                    height: 60
+                    radius: 6
+                    color: AppStyle.surface
+                    Row {
+                        anchors.centerIn: parent
+                        Repeater {
+                            model: 2
+                            delegate: BackgroundItem {
+                                width: 80
+                                height: 60
+                                highlightedColor: "transparent"
+                                Accessible.name: appState.t(index === 0 ? "toolbar.mute" : "toolbar.videomute")
+                                Icon {
+                                    anchors.centerIn: parent
+                                    width: 32
+                                    height: 32
+                                    color: AppStyle.text
+                                    source: Qt.resolvedUrl("../icons/" + (index === 0 ? (page.muteAudio ? "mic-slash" : "mic")
+                                                                                     : (page.muteVideo ? "video-off" : "video")) + ".svg")
+                                }
+                                onClicked: {
+                                    if (index === 0) page.muteAudio = !page.muteAudio
+                                    else { page.muteVideo = !page.muteVideo; if (!page.muteVideo) page.previewUnavailable = false }
+                                }
+                            }
+                        }
+                    }
+                }
+                Item { width: 1; height: 24 }
+                JitsiField {
+                    id: nameField
+                    width: parent.width
+                    text: appState.displayName
+                    placeholderText: appState.t("dialog.enterDisplayName")
+                    onAccepted: page.join(false)
+                }
+                Item { width: 1; height: 24 }
+                AppButton {
+                    width: parent.width
+                    type: "primary"
+                    text: appState.t("prejoin.joinMeeting")
+                    enabled: !page.joining
+                    onClicked: page.join(false)
+                }
+                Item { width: 1; height: 24 }
+                AppButton {
+                    width: parent.width
+                    type: "tertiary"
+                    text: appState.t("prejoin.joinMeetingInLowBandwidthMode")
+                    enabled: !page.joining
+                    onClicked: page.join(true)
+                }
+                Label {
+                    width: parent.width
+                    visible: page.formError.length > 0
+                    topPadding: 8
+                    text: page.formError
+                    color: AppStyle.error
+                    wrapMode: Text.Wrap
+                    horizontalAlignment: Text.AlignHCenter
+                    font.pixelSize: AppStyle.bodyShort
+                }
             }
         }
-        Label {
-            anchors { top: parent.top; topMargin: 125; horizontalCenter: parent.horizontalCenter }
-            text: page.room ? page.room.name : ""
-            color: AppStyle.muted
-            font.pixelSize: 32
-            font.bold: true
-        }
+
+        // UnsafeRoomWarning.native
         Rectangle {
-            width: 160; height: 160; radius: 80
-            anchors { horizontalCenter: parent.horizontalCenter; top: parent.top; topMargin: parent.height * 0.38 }
-            color: "#FFB518"
-            Icon { anchors.centerIn: parent; source: Qt.resolvedUrl("../icons/warning.svg"); width: 95; height: 95; color: "#111111" }
-        }
-        Label {
-            id: unsafeWarningText
-            x: 40
-            y: parent.height * 0.50
-            width: parent.width - 80
-            text: qsTr("Название комнаты небезопасно. Нежелательные участники могут присоединиться к вашей встрече. Рассмотрите возможность использования более уникального имени встречи. Узнайте больше о защите вашей встречи <a href=\"https://jitsi.github.io/handbook/docs/faq/#how-can-i-protect-my-meetings-with-jitsi\">here</a>.")
-            textFormat: Text.RichText
-            onLinkActivated: pageStack.push(Qt.resolvedUrl("SecurityHelpPage.qml"), {address: link})
-            color: AppStyle.text
-            font.pixelSize: 29
-            wrapMode: Text.Wrap
-            horizontalAlignment: Text.AlignHCenter
-        }
-        BackgroundItem {
-            x: 40
-            y: Math.max(parent.height * 0.65, unsafeWarningText.y + unsafeWarningText.height + 48)
-            width: parent.width - 80
-            height: 88
-            Accessible.role: Accessible.Button
-            Accessible.name: qsTr("Продолжить в любом случае")
-            Rectangle { anchors.fill: parent; radius: 7; color: "#E4E4E4" }
-            Label { anchors.centerIn: parent; text: qsTr("Продолжить в любом случае"); color: "#111111"; font.pixelSize: 24 }
-            onClicked: {
-                page.unsafeWarningOpen = false
-                page.unsafeWarningAccepted = true
+            anchors.fill: parent
+            z: 3
+            visible: page.unsafeWarningOpen
+            color: AppStyle.surface
+            MouseArea { anchors.fill: parent }
+            ScreenHeader {
+                id: warningHeader
+                title: appState.t("prejoin.joinMeeting")
+                showBack: true
+                closeIcon: true
+                onBackClicked: pageStack.pop()
+            }
+            Rectangle {
+                anchors { top: warningHeader.bottom; topMargin: 24; horizontalCenter: parent.horizontalCenter }
+                width: Math.min(warningRoom.implicitWidth + 48, 273)
+                height: warningRoom.height + 8
+                radius: 6
+                color: Qt.rgba(4 / 255, 4 / 255, 4 / 255, 0.7)
+                Label {
+                    id: warningRoom
+                    anchors.centerIn: parent
+                    width: Math.min(implicitWidth, 273 - 48)
+                    text: page.room ? page.room.name : ""
+                    color: AppStyle.text
+                    font.pixelSize: 20
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                    horizontalAlignment: Text.AlignHCenter
+                }
+            }
+            Column {
+                anchors.centerIn: parent
+                width: parent.width - 64
+                spacing: 32
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 120
+                    height: 120
+                    radius: 60
+                    color: "#F8AE1A"  // warning01
+                    Icon {
+                        anchors.centerIn: parent
+                        width: 56
+                        height: 56
+                        source: Qt.resolvedUrl("../icons/warning.svg")
+                        color: AppStyle.surface
+                    }
+                }
+                Label {
+                    width: parent.width
+                    // getUnsafeRoomText(state, t, 'prejoin')
+                    text: appState.t("security.insecureRoomNameWarningWeb", {
+                        recommendAction: appState.t("security.unsafeRoomActions.prejoin"),
+                        securityUrl: "https://jitsi.github.io/handbook/docs/faq/#how-can-i-protect-my-meetings-with-jitsi"
+                    })
+                    textFormat: Text.StyledText
+                    linkColor: AppStyle.accent
+                    onLinkActivated: pageStack.push(Qt.resolvedUrl("SecurityHelpPage.qml"), {address: link})
+                    color: AppStyle.text
+                    font.pixelSize: AppStyle.bodyShortLarge
+                    lineHeight: 1.6
+                    wrapMode: Text.Wrap
+                    horizontalAlignment: Text.AlignHCenter
+                }
+                AppButton {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: Math.min(352, parent.width)
+                    type: "secondary"
+                    text: appState.t("prejoin.proceedAnyway")
+                    onClicked: page.unsafeWarningOpen = false
+                }
             }
         }
     }

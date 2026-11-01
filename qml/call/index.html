@@ -9,13 +9,15 @@
 <body>
 <div id="app">
     <div id="stage" class="stage"></div>
+    <div id="shared-video" class="shared-video" hidden></div>
     <div id="tiles" class="tiles" hidden></div>
 
     <div id="titlebar" class="titlebar">
         <div class="room-wrap">
             <div id="room-name" class="room-name"></div>
             <div id="room-timer" class="label timer" hidden></div>
-            <button id="insecure-label" class="label insecure" hidden><i class="icon" data-icon="exclamation-solid"></i></button>
+            <button id="insecure-label" class="label insecure" hidden><i class="icon medium" data-icon="warning"></i></button>
+            <button id="audio-only-label" class="label audio-only" hidden data-t="videoStatus.lowBandwidthMode"></button>
         </div>
         <button id="tb-camera" class="tb-button"><i class="icon" data-icon="camera-refresh"></i></button>
         <button id="tb-participants" class="tb-button"><i class="icon" data-icon="users"></i><span id="participants-count" class="badge" hidden></span></button>
@@ -61,13 +63,47 @@
         <div class="participants-body">
             <div id="lobby-list"></div>
             <button class="button primary wide" data-action="invite"><i class="icon" data-icon="add-user"></i><span data-t="participantsPane.actions.invite"></span></button>
+            <input id="participants-search" class="field search" autocomplete="off">
             <div id="participants-heading" class="list-heading"></div>
             <div id="participants-list"></div>
         </div>
-        <footer id="participants-footer" class="participants-footer" hidden>
-            <button class="button secondary" data-action="mute-all" data-t="participantsPane.actions.muteAll"></button>
-            <button class="button secondary icon-only" data-action="moderation-menu"><i class="icon" data-icon="dots-horizontal"></i></button>
-        </footer>
+        <div class="participants-footer-wrap">
+            <button id="breakout-button" class="button secondary breakout-button" data-action="breakout-rooms" hidden>
+                <i class="icon" data-icon="breakout"></i><span data-t="breakoutRooms.buttonLabel"></span></button>
+            <footer id="participants-footer" class="participants-footer" hidden>
+                <button class="button secondary" data-action="mute-all" data-t="participantsPane.actions.muteAll"></button>
+                <button class="button secondary icon-only" data-action="moderation-menu"><i class="icon" data-icon="dots-horizontal"></i></button>
+            </footer>
+        </div>
+    </section>
+
+    <section id="gifs" class="screen" hidden>
+        <header class="screen-header">
+            <button class="header-button" data-action="close-screen"><i class="icon" data-icon="close-large"></i></button>
+            <input id="gif-search" class="field search gif-search" autocomplete="off">
+        </header>
+        <div id="gif-grid" class="gif-grid"></div>
+        <footer class="gif-footer"><span data-t="poweredby"></span><img src="icons/giphy-logo.png" alt="GIPHY"></footer>
+    </section>
+
+    <section id="stats" class="screen" hidden>
+        <header class="screen-header">
+            <button class="header-button" data-action="close-screen"><i class="icon" data-icon="close-large"></i></button>
+            <h1 data-t="speakerStats.speakerStats"></h1>
+        </header>
+        <div class="participants-body">
+            <input id="stats-search" class="field search" autocomplete="off">
+            <div id="stats-list"></div>
+        </div>
+    </section>
+
+    <section id="breakout" class="screen" hidden>
+        <header class="screen-header">
+            <button class="header-button" data-action="close-screen"><i class="icon" data-icon="close-large"></i></button>
+            <h1 data-t="breakoutRooms.title"></h1>
+        </header>
+        <div id="breakout-list" class="participants-body"></div>
+        <footer id="breakout-footer" class="breakout-footer"></footer>
     </section>
 
     <section id="waiting" class="screen waiting" hidden>

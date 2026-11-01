@@ -25,7 +25,7 @@ Page {
     ShareAction {
         id: inviteAction
         mimeType: "text/plain"
-        title: qsTr("Пригласить")
+        title: appState.t("toolbar.invite")
         resources: [{"data": page.inviteLink, "name": "Jitsi Meet"}]
     }
 
@@ -48,7 +48,11 @@ Page {
     Connections {
         target: PermissionHandler
         onMediaAccessRequested: {
-            if (appState.isTrustedOrigin(mediaAccessRequest.requestingOrigin)) mediaAccessRequest.accept()
+            var trusted = appState.isTrustedOrigin(mediaAccessRequest.requestingOrigin)
+            // Kept in the call log to see what the WebView asks for screen capture.
+            appState.appendCallLog("media access " + JSON.stringify(mediaAccessRequest.requestedPermissions)
+                                   + (trusted ? " accepted" : " denied"))
+            if (trusted) mediaAccessRequest.accept()
             else mediaAccessRequest.deny()
         }
         onPermissionsRequested: {
@@ -71,6 +75,9 @@ Page {
                 appState.copyText(page.inviteLink)
                 inviteAction.trigger()
                 break
+            case "copy":
+                appState.copyText(data.text)
+                break
             case "openUrl":
                 pageStack.push(Qt.resolvedUrl("SecurityHelpPage.qml"), {address: data.url})
                 break
@@ -79,11 +86,32 @@ Page {
                     address: data.url, serverAddress: page.serverAddress, roomPage: page
                 })
                 break
+            case "openWhiteboard":
+                if (!page.whiteboardPage) {
+                    page.whiteboardPage = pageStack.push(Qt.resolvedUrl("WhiteboardPage.qml"), {
+                        address: data.url, title: data.title, closeLabel: data.closeLabel, roomPage: page
+                    })
+                }
+                break
+            case "openSettings":
+                pageStack.push(Qt.resolvedUrl("MeetingSettingsPage.qml"), {title: data.title})
+                break
+            case "closeWhiteboard":
+                if (page.whiteboardPage) pageStack.pop(page)
+                break
             case "left":
                 page.close()
                 break
             }
         }
+    }
+
+    property var whiteboardPage: null
+
+    // Called by WhiteboardPage when it is closed.
+    function whiteboardClosed() {
+        whiteboardPage = null
+        callJs("window.auroraCall.whiteboardClosed()")
     }
 
     // Called by OrganizerLoginPage when the sign-in page returns a token.

@@ -20,7 +20,12 @@ Page {
         var server = page.serverAddress.replace(/\/$/, "")
         if (text.indexOf(server + "/") !== 0) return ""
         var match = text.match(/[#&]jwt=([^&]+)/)
-        return match ? decodeURIComponent(match[1]) : ""
+        if (!match) return ""
+        // The sign-in page writes jwt=JSON.stringify(token), i.e. in quotes;
+        // jitsi-meet reads URL parameters with JSON.parse (parseURLParams).
+        var value = decodeURIComponent(match[1])
+        try { value = JSON.parse(value) } catch (error) {}
+        return typeof value === "string" ? value : ""
     }
 
     function check(url) {
@@ -52,9 +57,10 @@ Page {
 
     Rectangle { anchors.fill: parent; color: AppStyle.background }
 
-    ScreenHeader {
+    PageHeader {
         id: header
-        title: qsTr("Я организатор")
+        title: appState.t("dialog.IamHost")
+        closeIcon: true
         subtitle: String(page.popups.length ? page.popups[page.popups.length - 1].url : web.url).split("/").slice(0, 3).join("/")
         showBack: true
         onBackClicked: {

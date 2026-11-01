@@ -2,40 +2,48 @@ import QtQuick 2.6
 import Sailfish.Silica 1.0
 import "."
 
+// Welcome page tabs (welcome/constants.tsx): welcomeCard background without
+// a top border, 24 dp icons and 12 dp labels, white when active and text03
+// when inactive.
 Rectangle {
     id: navigation
     property int selectedTab: 0
     signal tabSelected(int index)
-
-    height: 70
+    height: 56
     color: AppStyle.surface
-    Rectangle { width: parent.width; height: 1; color: AppStyle.border }
+
     Row {
         anchors.fill: parent
         Repeater {
-            model: [qsTr("Недавние"), qsTr("Календарь"), qsTr("Настройки")]
+            model: [
+                { label: "welcomepage.recentList", icon: "restore" },
+                { label: "welcomepage.calendar", icon: "calendar" },
+                { label: "welcomepage.settings", icon: "gear" }
+            ]
             delegate: BackgroundItem {
-                width: navigation.width/3
+                width: navigation.width / 3
                 height: navigation.height
-                Accessible.name: modelData
-                Accessible.role: Accessible.Button
+                highlightedColor: "transparent"
+                Accessible.name: appState.t(modelData.label)
+                Accessible.role: Accessible.PageTab
+                readonly property color tint: navigation.selectedTab === index ? AppStyle.text : AppStyle.inactive
                 Column {
                     anchors.centerIn: parent
                     width: parent.width
-                    spacing: 4
+                    spacing: 2
                     Icon {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        source: index === 0 ? "image://theme/icon-m-history" : Qt.resolvedUrl("../icons/" + (index === 1 ? "calendar" : "gear") + ".svg")
-                        width: 24; height: width
-                        color: navigation.selectedTab === index ? AppStyle.text : AppStyle.inactive
+                        source: Qt.resolvedUrl("../icons/" + modelData.icon + ".svg")
+                        width: 24
+                        height: 24
+                        color: tint
                     }
                     Label {
                         width: parent.width
-                        text: modelData
+                        text: appState.t(modelData.label)
                         horizontalAlignment: Text.AlignHCenter
-                        font.pixelSize: 12
-                        font.bold: navigation.selectedTab === index
-                        color: navigation.selectedTab === index ? AppStyle.text : AppStyle.inactive
+                        font.pixelSize: AppStyle.label
+                        color: tint
                     }
                 }
                 onClicked: navigation.tabSelected(index)

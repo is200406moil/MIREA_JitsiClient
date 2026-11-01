@@ -2,59 +2,48 @@ import QtQuick 2.6
 import Sailfish.Silica 1.0
 import "."
 
+// FormRow with a Switch (settings/components/native): at least 64 dp high,
+// 16 dp label on the left, switch on the right with the colours of
+// base/ui Switch: action01 track when on, ui05 when off, icon01 thumb.
 BackgroundItem {
     id: toggle
     property string text
-    property string description
     property string preferenceKey
-    property bool locked: false
-    property bool checked: locked || appState.preferences[preferenceKey] === true
+    property bool checked: appState.preferences[preferenceKey] === true
 
     width: parent.width
-    height: Math.max(48, labels.height + 16)
-    enabled: !locked
-    Accessible.role: Accessible.Button
+    height: Math.max(64, labelText.height + 16)
+    highlightedColor: "transparent"
+    Accessible.role: Accessible.CheckBox
     Accessible.name: text
+    Accessible.checked: checked
     onClicked: appState.setPreference(preferenceKey, !checked)
 
-    Column {
-        id: labels
-        x: 16
-        width: toggle.width - x - switchTrack.width - 32
+    Label {
+        id: labelText
+        x: 24
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 4
-        Label {
-            width: parent.width
-            text: toggle.text
-            wrapMode: Text.Wrap
-            color: toggle.enabled ? AppStyle.text : AppStyle.muted
-            font.pixelSize: 14
-        }
-        Label {
-            visible: toggle.description.length > 0
-            width: parent.width
-            text: toggle.description
-            wrapMode: Text.Wrap
-            font.pixelSize: 12
-            color: AppStyle.muted
-        }
+        width: toggle.width - x - track.width - 40
+        text: toggle.text
+        wrapMode: Text.Wrap
+        color: AppStyle.text
+        font.pixelSize: AppStyle.bodyShortLarge
     }
     Rectangle {
-        id: switchTrack
-        anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter }
-        width: 32
+        id: track
+        anchors { right: parent.right; rightMargin: 24; verticalCenter: parent.verticalCenter }
+        width: 34
         height: 14
-        radius: height / 2
-        color: toggle.checked ? "#719BDE" : "#666666"
-        opacity: toggle.enabled ? 1 : 0.7
-        Rectangle {
-            width: 20
-            height: width
-            radius: width / 2
-            anchors.verticalCenter: parent.verticalCenter
-            x: toggle.checked ? parent.width - width : 0
-            Behavior on x { NumberAnimation { duration: 120 } }
-            color: AppStyle.text
-        }
+        radius: 7
+        color: toggle.checked ? AppStyle.accent : AppStyle.separator
+    }
+    Rectangle {
+        width: 20
+        height: 20
+        radius: 10
+        anchors.verticalCenter: track.verticalCenter
+        x: toggle.checked ? track.x + track.width - width + 3 : track.x - 3
+        Behavior on x { NumberAnimation { duration: 120 } }
+        color: AppStyle.text
     }
 }
