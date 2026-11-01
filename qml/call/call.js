@@ -215,6 +215,10 @@
         pollsUnread: 0,
         pollDraft: null,
         volumes: new Map(),
+        iAmVisitor: false,
+        demoteActor: '',
+        promotionRequests: new Map(),
+        visitorCount: 0,
         localStats: null,
         remoteStats: new Map(),
         followMe: false,
@@ -471,10 +475,14 @@
         $('room-timer').hidden = !state.startedAt;
         $('insecure-label').hidden = !cfg.insecureRoomName;
         $('audio-only-label').hidden = !state.audioOnly;
-        const count = state.remotes.size + 1;
+        // A visitor is not one of the meeting participants.
+        const count = state.remotes.size + (state.iAmVisitor ? 0 : 1);
         $('participants-count').hidden = !state.joined;
         $('participants-count').textContent = count;
         $('tb-camera').hidden = state.videoMuted || !state.local.tracks.video;
+        // VisitorsCountLabel
+        $('visitors-label').hidden = !state.joined || !(state.visitorCount > 0);
+        $('visitors-count').textContent = state.visitorCount;
     }
 
     function tick() {
@@ -484,6 +492,8 @@
     // NATIVE_THRESHOLDS from react/features/toolbox/constants.ts. The screen
     // sharing button is shown only where the WebView can capture the screen.
     function mainButtons() {
+        // A visitor has no microphone or camera (Toolbox.native).
+        if (state.iAmVisitor) return ['chat', 'raisehand', 'tileview', 'hangup'];
         const width = window.innerWidth;
         if (width >= 560 && screenShareSupported()) {
             return ['microphone', 'camera', 'chat', 'desktop', 'raisehand', 'tileview', 'overflowmenu', 'hangup'];
@@ -924,15 +934,16 @@
                 lobby.appendChild(all);
             }
         }
-        const people = everyone();
+        const people = state.iAmVisitor ? [...state.remotes.values()] : everyone();
         $('participants-heading').textContent = t('participantsPane.headings.participantsList', { count: people.length });
         const list = $('participants-list');
         list.textContent = '';
         const filter = state.participantFilter.trim().toLowerCase();
-        const sorted = [state.local, ...[...state.remotes.values()].sort((a, b) =>
+        const sorted = [...(state.iAmVisitor ? [] : [state.local]), ...[...state.remotes.values()].sort((a, b) =>
             (isRaised(b.raisedHand) - isRaised(a.raisedHand)) || displayNameOf(a).localeCompare(displayNameOf(b)))];
         sorted.filter(p => !filter || displayNameOf(p).toLowerCase().includes(filter))
             .forEach(p => list.appendChild(participantItem(p, {})));
+        renderVisitors(lobby);
         $('participants-footer').hidden = !isModerator();
         $('breakout-button').hidden = !breakoutRoomsVisible();
     }
@@ -969,8 +980,8 @@
                         .forEach(other => state.conference.muteParticipant(other, 'audio'))
                 }));
             }
-            if (moderator && isRaised(p.raisedHand) && typeof state.conference.lowerHand === 'function') {
-                sheetItem(sheet, 'raise-hand', t('participantsPane.actions.lowerHand'), () => state.conference.lowerHand(p.id));
+            if (moderator && isRaised(p.raisedHand)) {
+                sheetItem(sheet, 'raise-hand', t('participantsPane.actions.lowerHand'), () => lowerHand(p.id));
             }
             if (remoteMute) {
                 sheetItem(sheet, 'video-off', t(videoMuted ? 'videothumbnail.videoMuted' : 'videothumbnail.domuteVideo'), () => confirmDialog({
@@ -1008,7 +1019,7 @@
                 sheetItem(sheet, 'users', t('videothumbnail.demote'), () => confirmDialog({
                     title: t('dialog.demoteParticipantTitle'), text: t('dialog.demoteParticipantDialog'),
                     confirmLabel: t('dialog.Yes'),
-                    onConfirm: () => state.conference.sendMessage({ type: 'visitors', action: 'demote-request', id: p.id, actor: state.localId })
+                    onConfirm: () => demoteParticipant(p)
                 }));
             }
             if (!chatSendDisabledFor(p.id)) sheetItem(sheet, 'message', t('toolbar.privateMessage'), () => startPrivateChat(p.id));
@@ -1037,23 +1048,15 @@
                 notify('preference', { key: 'hideSelfView', value: !hidden });
                 render();
             });
-            if (!config.disableSelfDemote && state.remotes.size > 0) {
+            if (!config.disableSelfDemote && !state.iAmVisitor && state.remotes.size > 0) {
                 sheetItem(sheet, 'users', t('videothumbnail.demote'), () => confirmDialog({
                     title: t('dialog.demoteParticipantTitle'), text: t('dialog.demoteParticipantDialog'),
                     confirmLabel: t('dialog.Yes'),
-                    onConfirm: demoteSelf
+                    onConfirm: () => becomeVisitor('')
                 }));
             }
             sheetItem(sheet, 'info', t('videothumbnail.connectionInfo'), () => openConnectionInfo(p.id));
         });
-    }
-
-    // demoteRequest for oneself: join again as a visitor (preferVisitor).
-    async function demoteSelf() {
-        showConnecting(t('connectingOverlay.joiningRoom'));
-        await disconnect(true);
-        state.serverConfig = Object.assign({}, state.serverConfig, { preferVisitor: true });
-        if (!state.leaving) connect();
     }
 
     function sheetHeader(sheet, p) {
@@ -1194,6 +1197,7 @@
         openSheet(sheet => {
             sheetItem(sheet, 'video-off', t('participantsPane.actions.stopEveryonesVideo'),
                 () => [...state.remotes.keys()].forEach(id => conference.muteParticipant(id, 'video')));
+            sheetItem(sheet, 'raise-hand', t('participantsPane.actions.lowerAllHands'), lowerAllHands);
             if (!conference || typeof conference.isAVModerationSupported !== 'function' || !conference.isAVModerationSupported()
                 || isInBreakoutRoom()) return;
             sheet.appendChild(el('div', 'sheet-title', t('participantsPane.actions.allow')));
@@ -1415,9 +1419,44 @@
         render();
     }
 
+    // LowerHandButton / ContextMenuMore.native: a moderator asks one or all
+    // participants to lower the hand (LOWER_HAND_MESSAGE).
+    const LOWER_HAND_MESSAGE = 'lower-hand-message';
+
+    function lowerHand(id) {
+        if (state.conference) state.conference.sendEndpointMessage(id, { name: LOWER_HAND_MESSAGE });
+    }
+
+    function lowerAllHands() {
+        if (state.local.raisedHand) toggleRaiseHand();
+        if (state.conference) state.conference.sendEndpointMessage('', { name: LOWER_HAND_MESSAGE });
+    }
+
+    // A hand still raised from an earlier promotion would make the visitor
+    // node ask for promotion again at once, and the server would bring the
+    // participant straight back; the hand is lowered first.
+    function demoteParticipant(p) {
+        const demote = () => {
+            if (state.conference) state.conference.sendMessage({ type: 'visitors', action: 'demote-request', id: p.id, actor: state.localId });
+        };
+        if (!isRaised(p.raisedHand)) { demote(); return; }
+        lowerHand(p.id);
+        setTimeout(demote, 1000);
+    }
+
     function toggleRaiseHand() {
         state.local.raisedHand = !state.local.raisedHand;
         if (state.conference) state.conference.setLocalParticipantProperty('raisedHand', state.local.raisedHand ? Date.now() : 0);
+        // A raised hand of a visitor is a request to join.
+        if (state.iAmVisitor) {
+            if (!$('dialog').hidden && $('dialog').dataset.kind === 'joinMeeting') closeDialog();
+            const box = $('notifications').querySelector('[data-key="request-to-join"]');
+            if (box) box.remove();
+            if (state.local.raisedHand) {
+                showNotification({ key: 'request-to-join', title: t('visitors.notification.requestToJoin'),
+                    description: t('visitors.notification.requestToJoinDescription'), timeout: 600000 });
+            }
+        }
         render();
     }
 
@@ -1777,6 +1816,188 @@
         const disabled = chatSendDisabled();
         $('chat-form').hidden = disabled;
         $('chat-disabled').hidden = !disabled;
+    }
+
+    // --------------------------------------------------------------- visitors
+
+    // react/features/visitors. A visitor watches the meeting from a visitor
+    // node without microphone or camera; raising the hand asks the
+    // moderators to be promoted. Jicofo moves participants between the main
+    // room and the visitor nodes with CONNECTION_REDIRECTED.
+
+    function appendParam(url, name, value) {
+        if (!url) return url;
+        return `${url}${url.includes('?') ? '&' : '?'}${name}=${encodeURIComponent(value)}`;
+    }
+
+    // getVisitorOptions of base/conference/functions.ts.
+    function visitorOptions(vnode, focusJid, username) {
+        const config = state.serverConfig;
+        if (!config || !config.hosts) return null;
+        if (!vnode) {
+            // Back to the main room after a promotion. disableFocus stays
+            // set: the promoted participant joins the room directly under
+            // the username jicofo gave, without a new conference request.
+            if (!config.oldConfig || !username) return null;
+            const old = config.oldConfig;
+            return {
+                hosts: old.hosts,
+                focusUserJid: focusJid,
+                disableLocalStatsBroadcast: false,
+                preferVisitor: false,
+                bosh: old.bosh && appendParam(old.bosh, 'customusername', username),
+                p2p: old.p2p,
+                websocket: old.websocket && appendParam(old.websocket, 'customusername', username),
+                oldConfig: undefined
+            };
+        }
+        const old = config.oldConfig || {
+            hosts: Object.assign({}, config.hosts),
+            focusUserJid: config.focusUserJid,
+            bosh: config.bosh,
+            p2p: config.p2p,
+            websocket: config.websocket
+        };
+        const domain = `${vnode}.meet.jitsi`;
+        return {
+            oldConfig: old,
+            // Only domain and muc: an anonymous or auth domain of the main
+            // deployment would make the visitor node refuse the login.
+            hosts: { domain, muc: old.hosts.muc.replace(old.hosts.domain, domain) },
+            focusUserJid: focusJid,
+            disableFocus: true,
+            disableLocalStatsBroadcast: true,
+            bosh: old.bosh && appendParam(old.bosh, 'vnode', vnode),
+            p2p: Object.assign({}, old.p2p, { enabled: false }),
+            websocket: old.websocket && appendParam(old.websocket, 'vnode', vnode)
+        };
+    }
+
+    // redirect() of base/conference/actions.any.ts.
+    async function onRedirected(vnode, focusJid, username) {
+        const options = visitorOptions(vnode, focusJid, username);
+        if (!options) { log('redirect without parameters', vnode || '', focusJid || ''); return; }
+        log('redirected', vnode ? 'to visitor node ' + vnode : 'to the main room');
+        state.serverConfig = Object.assign({}, state.serverConfig, options);
+        showConnecting(t('connectingOverlay.joiningRoom'));
+        // A visitor sends no media; the tracks are created again when the
+        // microphone or camera is turned on after the promotion.
+        await disconnect(false);
+        state.iAmVisitor = !!vnode;
+        state.audioMuted = true;
+        state.videoMuted = true;
+        state.local.raisedHand = false;
+        state.promotionRequests.clear();
+        // The request to join and the visitor notice belong to the old room.
+        ['request-to-join', 'visitor', 'promotion'].forEach(key => {
+            const node = $('notifications').querySelector('[data-key="' + key + '"]');
+            if (node) node.remove();
+        });
+        render();
+        if (!state.leaving) connect();
+    }
+
+    // The local participant asked to become a visitor, or a moderator moved
+    // them: join again preferring a visitor node.
+    async function becomeVisitor(actorName) {
+        state.demoteActor = actorName || '';
+        showConnecting(t('connectingOverlay.joiningRoom'));
+        await disconnect(false);
+        // From the original configuration: after a promotion the current one
+        // joins the main room directly (disableFocus, customusername) and
+        // would never ask jicofo for a visitor node.
+        state.serverConfig = Object.assign({}, state.baseConfig || state.serverConfig, { preferVisitor: true });
+        state.audioMuted = true;
+        state.videoMuted = true;
+        if (!state.leaving) connect();
+    }
+
+    // CONFERENCE_JOINED of visitors/middleware.ts for a visitor.
+    function onVisitorJoined() {
+        if (state.demoteActor) {
+            showNotification({ key: 'visitor', title: t('visitors.notification.title'),
+                description: t('visitors.notification.demoteDescription', { actor: state.demoteActor }), timeout: 60000 });
+            state.demoteActor = '';
+        } else {
+            // JoinMeetingDialog.native
+            confirmDialog({
+                kind: 'joinMeeting',
+                title: t('visitors.joinMeeting.title'),
+                text: `${t('visitors.joinMeeting.description')} ${t('visitors.joinMeeting.wishToSpeak')}`,
+                confirmLabel: t('visitors.joinMeeting.raiseHand'),
+                onConfirm: () => { if (!state.local.raisedHand) toggleRaiseHand(); }
+            });
+        }
+    }
+
+    function onVisitorsMessage(msg) {
+        if (!msg) return;
+        if (msg.action === 'demote-request') {
+            if (msg.id !== state.localId) return;
+            const actor = person(msg.actor);
+            becomeVisitor(actor ? displayNameOf(actor) : '');
+        } else if (msg.action === 'promotion-request') {
+            if (msg.on) state.promotionRequests.set(msg.from, msg.nick || msg.from);
+            else state.promotionRequests.delete(msg.from);
+            showPromotionNotification();
+            if (state.screen === 'participants') renderParticipants();
+        }
+    }
+
+    function answerPromotion(from, approved) {
+        if (state.conference) {
+            state.conference.sendMessage({ type: 'visitors', action: 'promotion-response', approved, id: from });
+        }
+        state.promotionRequests.delete(from);
+        showPromotionNotification();
+        if (state.screen === 'participants') renderParticipants();
+    }
+
+    // _handlePromotionNotification: one request can be answered from the
+    // notification, several open the participants pane.
+    function showPromotionNotification() {
+        const box = $('notifications');
+        const old = box.querySelector('[data-key="promotion"]');
+        if (old) old.remove();
+        const requests = [...state.promotionRequests];
+        if (!requests.length || !isModerator()) return;
+        if (requests.length === 1) {
+            const [from, nick] = requests[0];
+            showNotification({ key: 'promotion', title: nick, description: t('notify.participantWantsToJoin'), timeout: 600000,
+                actions: [
+                    { label: t('participantsPane.actions.admit'), onClick: () => answerPromotion(from, true) },
+                    { label: t('participantsPane.actions.reject'), onClick: () => answerPromotion(from, false) }
+                ] });
+        } else {
+            showNotification({ key: 'promotion', title: t('notify.waitingParticipants', { waitingParticipants: requests.length }),
+                description: t('notify.participantsWantToJoin'), timeout: 600000,
+                actions: [{ label: t('notify.viewVisitors'), onClick: () => openScreen('participants') }] });
+        }
+    }
+
+    // The participants pane: visitors who raised the hand, with Admit and
+    // Reject, and the number of visitors.
+    function renderVisitors(container) {
+        if (!isModerator()) return;
+        if (state.visitorCount > 0) {
+            container.appendChild(el('div', 'list-heading visitors-heading', t('participantsPane.headings.visitors', { count: state.visitorCount })
+                + (state.promotionRequests.size ? t('participantsPane.headings.visitorRequests', { count: state.promotionRequests.size }) : '')));
+        }
+        state.promotionRequests.forEach((nick, from) => {
+            const item = el('div', 'participant-item');
+            item.appendChild(avatar({ name: nick }));
+            const details = el('div', 'details');
+            details.appendChild(el('div', 'name', nick));
+            item.appendChild(details);
+            const actions = el('div', 'lobby-actions');
+            const reject = el('button', 'button secondary small', t('participantsPane.actions.reject'));
+            reject.addEventListener('click', () => answerPromotion(from, false));
+            const admit = el('button', 'button primary small', t('participantsPane.actions.admit'));
+            admit.addEventListener('click', () => answerPromotion(from, true));
+            actions.append(reject, admit);
+            item.appendChild(actions);
+            container.appendChild(item);
+        });
     }
 
     // ------------------------------------------------------------------ GIFs
@@ -2838,10 +3059,15 @@
             // overlay does, before giving up.
             scheduleReconnect();
         });
+        connection.addEventListener(E.CONNECTION_REDIRECTED, (vnode, focusJid, username) => {
+            if (state.connection === connection && !state.leaving) onRedirected(vnode, focusJid, username);
+        });
         connection.addEventListener(E.CONNECTION_DISCONNECTED, () => {
             if (state.connection === connection && !state.leaving) log('connection closed');
         });
-        connection.connect(state.credentials ? { id: state.credentials.id, password: state.credentials.password } : undefined);
+        // A visitor node takes anonymous visitors only.
+        const credentials = state.credentials && !state.iAmVisitor ? state.credentials : null;
+        connection.connect(credentials ? { id: credentials.id, password: credentials.password } : undefined);
     }
 
     function joinConference(password, roomOverride) {
@@ -2955,6 +3181,16 @@
             if (payload && payload.name === 'endpoint-reaction' && Array.isArray(payload.reactions)) {
                 payload.reactions.forEach(showReaction);
             }
+            if (payload && payload.name === LOWER_HAND_MESSAGE && participant && participant.isModerator && participant.isModerator()
+                    && state.local.raisedHand && !(state.serverConfig && state.serverConfig.disableLowerHandByModerator)) {
+                toggleRaiseHand();
+            }
+            // Another moderator answered a promotion request.
+            if (payload && payload.action === 'promotion-response' && payload.approved && state.promotionRequests.has(payload.id)) {
+                state.promotionRequests.delete(payload.id);
+                showPromotionNotification();
+                if (state.screen === 'participants') renderParticipants();
+            }
         });
         on(C.CONFERENCE_CREATED_TIMESTAMP, ts => {
             state.startedAt = ts || Date.now();
@@ -3005,6 +3241,16 @@
             moderationChanged();
         });
         on(C.START_MUTED_POLICY_CHANGED, onStartMutedPolicy);
+        if (C.VISITORS_MESSAGE) on(C.VISITORS_MESSAGE, onVisitorsMessage);
+        if (C.VISITORS_REJECTION) on(C.VISITORS_REJECTION, () => { if (state.local.raisedHand) toggleRaiseHand(); });
+        if (C.PROPERTIES_CHANGED) on(C.PROPERTIES_CHANGED, properties => {
+            const count = Number(properties && properties['visitor-count']);
+            if (!isNaN(count) && count !== state.visitorCount) {
+                state.visitorCount = count;
+                render();
+                if (state.screen === 'participants') renderParticipants();
+            }
+        });
         on(C.AV_MODERATION_CHANGED, ({ enabled, mediaType }) => {
             if (mediaType === 'audio' || mediaType === 'video') state.avModeration[mediaType] = !!enabled;
         });
@@ -3047,7 +3293,8 @@
         state.joined = true;
         state.joinedAt = Date.now();
         state.followMeModerator = '';
-        if (conference.getStartMutedPolicy) applyStartMuted(conference.getStartMutedPolicy());
+        if (conference.getStartMutedPolicy && !state.iAmVisitor) applyStartMuted(conference.getStartMutedPolicy());
+        if (state.iAmVisitor) setTimeout(onVisitorJoined, 0);
         state.localId = conference.myUserId();
         state.local.id = state.localId;
         state.local.role = conference.isModerator() ? 'moderator' : 'participant';
@@ -3449,6 +3696,8 @@
         try {
             await loadScript(cfg.server + '/config.js');
             state.serverConfig = Object.assign({}, window.config || {});
+            // The deployment as configured, before any visitor redirect.
+            state.baseConfig = JSON.parse(JSON.stringify(state.serverConfig));
             if (!window.JitsiMeetJS) await loadScript(cfg.server + '/libs/lib-jitsi-meet.min.js', 60000);
         } catch (error) {
             log('server unavailable', error.message);

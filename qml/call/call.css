@@ -346,3 +346,10 @@ h1 { margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; }
 .stats-label { font-weight: 600; margin-right: 6px; }
 .stats-row .icon { color: var(--text03); }
 .stats-value { color: var(--text02); }
+
+/* VisitorsCountLabel: warning02 label under the title bar. */
+.visitors-label { position: absolute; top: calc(var(--titlebar) + 8px); right: 8px; z-index: 11; display: flex; align-items: center;
+    gap: 6px; height: 32px; padding: 0 10px; border-radius: var(--radius); background: var(--warning02); color: #040404;
+    font-weight: 600; font-size: 16px; }
+.visitors-label[hidden] { display: none; }
+.visitors-heading { color: var(--warning02); }
