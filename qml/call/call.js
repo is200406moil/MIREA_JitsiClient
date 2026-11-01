@@ -210,6 +210,10 @@
         startedAt: 0,
         messages: [],
         unread: 0,
+        chatTab: 'chat',
+        polls: new Map(),
+        pollsUnread: 0,
+        pollDraft: null,
         privateRecipient: null,
         knocking: new Map(),
         lobbyEnabled: false,
@@ -482,7 +486,7 @@
     const buttons = {
         microphone: () => ({ icon: state.audioMuted ? 'mic-slash' : 'mic', label: t('toolbar.mute'), action: toggleAudio }),
         camera: () => ({ icon: state.videoMuted ? 'video-off' : 'video', label: t('toolbar.videomute'), action: toggleVideo }),
-        chat: () => ({ icon: 'message', label: t('toolbar.chat'), action: () => openScreen('chat'), dot: state.unread > 0 }),
+        chat: () => ({ icon: 'message', label: t('toolbar.chat'), action: () => openScreen('chat'), dot: state.unread + state.pollsUnread > 0 }),
         raisehand: () => ({ icon: 'raise-hand', label: t(state.local.raisedHand ? 'toolbar.lowerYourHand' : 'toolbar.raiseYourHand'),
             action: toggleRaiseHand, toggled: state.local.raisedHand }),
         tileview: () => ({ icon: 'tile-view', label: t('toolbar.tileViewToggle'), action: toggleTileView, toggled: state.tileView }),
@@ -756,7 +760,7 @@
 
     // ----------------------------------------------------------------- screens
 
-    function openScreen(name) {
+    function openScreen(name, tab) {
         closeSheet();
         state.screen = name;
         $('chat').hidden = name !== 'chat';
@@ -767,8 +771,8 @@
         if (name === 'gifs') openGifMenu();
         if (name === 'stats') renderSpeakerStats();
         if (name === 'chat') {
-            state.unread = 0;
-            renderChat();
+            if (tab) state.chatTab = tab;
+            renderChatTabs();
             render();
         }
         if (name === 'participants') renderParticipants();
@@ -832,7 +836,7 @@
         if (gifUrl && gifDisplayMode() === 'tile') return;
         state.messages.push(message);
         if (!message.local) playSound('message');
-        if (state.screen === 'chat') renderChat();
+        if (state.screen === 'chat' && state.chatTab === 'chat') renderChat();
         else if (!message.local) {
             state.unread++;
             if (prefs.chatNotifications !== false) {
@@ -1471,6 +1475,322 @@
         closeScreen();
         if (!id || !state.conference || !state.joined) return;
         state.conference.sendTextMessage(`gif[https://i.giphy.com/media/${id}/giphy.gif]`);
+    }
+
+    // ------------------------------------------------------------------ polls
+
+    // react/features/polls: the "Polls" tab of the chat screen. Polls travel
+    // through the server's polls component (conference.getPolls()).
+    const POLL_CHAR_LIMIT = 500;
+    const POLL_ANSWERS_LIMIT = 255;
+
+    function pollsHandler() {
+        const conference = state.conference;
+        const polls = conference && typeof conference.getPolls === 'function' ? conference.getPolls() : null;
+        return polls && polls.isSupported() ? polls : null;
+    }
+
+    function sanitizePollAnswers(answers) {
+        if (!Array.isArray(answers)) return [];
+        return answers.slice(0, 32).map(answer => ({
+            name: String(answer && answer.name !== undefined ? answer.name : ''),
+            voters: Array.isArray(answer && answer.voters) ? answer.voters : []
+        }));
+    }
+
+    function onPollReceived(data) {
+        const { pollId, answers, senderId, question, history, singleAnswer } = data || {};
+        if (!pollId) return;
+        state.polls.set(pollId, {
+            pollId, senderId, question: String(question || ''), answers: sanitizePollAnswers(answers),
+            singleAnswer: singleAnswer === true, changingVote: false, showResults: false, lastVote: null, saved: false
+        });
+        if (!history) {
+            const viewing = state.screen === 'chat' && state.chatTab === 'polls';
+            if (!viewing) {
+                state.pollsUnread++;
+                playSound('message');
+                showNotification({ title: t('polls.notification.title'), description: t('polls.notification.description'),
+                    onClick: () => openScreen('chat', 'polls') });
+            }
+        }
+        if (state.screen === 'chat') renderChatTabs();
+        render();
+    }
+
+    function onPollAnswerReceived(data) {
+        const { pollId, answers, senderId, senderName } = data || {};
+        const poll = state.polls.get(pollId);
+        if (!poll) return;
+        const votes = Array.isArray(answers) ? answers.slice(0, 32).map(Boolean) : [];
+        const voter = person(senderId);
+        const name = voter ? voter.name : senderName;
+        poll.answers.forEach((answer, index) => {
+            const known = answer.voters.some(user => user.id === senderId);
+            if (known && !votes[index]) answer.voters = answer.voters.filter(user => user.id !== senderId);
+            else if (!known && votes[index]) answer.voters.push({ id: senderId, name });
+        });
+        if (state.screen === 'chat' && state.chatTab === 'polls') renderPolls();
+    }
+
+    function pollCreatorName(poll) {
+        const creator = person(poll.senderId);
+        return creator ? displayNameOf(creator) : '';
+    }
+
+    function renderPolls() {
+        const list = $('polls-list');
+        list.textContent = '';
+        $('poll-create').hidden = !!state.pollDraft || !pollsHandler();
+        if (state.pollDraft) { renderPollCreate(list); return; }
+        if (!state.polls.size) {
+            const empty = el('div', 'polls-empty');
+            empty.appendChild(icon('message', 'huge'));
+            empty.appendChild(el('div', '', t('polls.results.empty')));
+            list.appendChild(empty);
+            return;
+        }
+        state.polls.forEach(poll => {
+            const item = el('div', 'poll-item');
+            if (poll.showResults) renderPollResults(item, poll);
+            else renderPollAnswer(item, poll);
+            list.appendChild(item);
+        });
+        list.scrollTop = list.scrollHeight;
+    }
+
+    function pollHeader(item, poll) {
+        item.appendChild(el('div', 'poll-question', poll.question));
+        item.appendChild(el('div', 'poll-owner', t('polls.by', { name: pollCreatorName(poll) })));
+    }
+
+    // PollAnswer.native
+    function renderPollAnswer(item, poll) {
+        const checks = poll.lastVote ? poll.lastVote.slice() : poll.answers.map(() => false);
+        const header = el('div', 'poll-header');
+        const titles = el('div', '');
+        header.appendChild(titles);
+        item.appendChild(header);
+        pollHeader(titles, poll);
+        if (poll.singleAnswer) titles.appendChild(el('div', 'poll-owner', t('polls.answer.singleAnswerHint')));
+        if (poll.saved) {
+            const close = el('button', 'header-button');
+            close.appendChild(icon('close-large'));
+            close.setAttribute('aria-label', t('polls.closeButton'));
+            close.addEventListener('click', () => { state.polls.delete(poll.pollId); renderPolls(); });
+            header.appendChild(close);
+        }
+        const content = el('div', 'poll-answers');
+        const switches = poll.answers.map((answer, index) => {
+            const row = el('div', 'poll-switch-row');
+            const toggle = el('button', 'switch' + (checks[index] ? ' on' : ''));
+            toggle.disabled = poll.saved;
+            toggle.addEventListener('click', () => {
+                const value = !checks[index];
+                if (poll.singleAnswer && value) checks.fill(false);
+                checks[index] = value;
+                switches.forEach((node, i) => node.classList.toggle('on', checks[i]));
+                if (submit) submit.disabled = !checks.some(Boolean);
+            });
+            row.appendChild(toggle);
+            row.appendChild(el('span', '', answer.name));
+            content.appendChild(row);
+            return toggle;
+        });
+        item.appendChild(content);
+        const row = el('div', 'poll-buttons');
+        let submit = null;
+        const button = (label, type, onClick) => {
+            const node = el('button', 'button ' + type, label);
+            node.addEventListener('click', onClick);
+            row.appendChild(node);
+            return node;
+        };
+        if (poll.saved) {
+            button(t('polls.answer.edit'), 'secondary', () => {
+                state.pollDraft = { pollId: poll.pollId, question: poll.question,
+                    answers: poll.answers.map(answer => answer.name), singleAnswer: poll.singleAnswer };
+                renderPolls();
+            });
+            button(t('polls.answer.send'), 'primary', () => {
+                const handler = pollsHandler();
+                if (!handler) return;
+                handler.createPoll(poll.pollId, poll.question, poll.answers.map(answer => ({ name: answer.name })),
+                    { singleAnswer: poll.singleAnswer });
+                state.polls.delete(poll.pollId);
+                renderPolls();
+            });
+        } else {
+            button(t('polls.answer.skip'), 'secondary', () => {
+                if (poll.changingVote) { poll.changingVote = false; poll.showResults = true; }
+                else { poll.lastVote = null; poll.showResults = true; }
+                renderPolls();
+            });
+            submit = button(t('polls.answer.submit'), 'primary', () => {
+                const handler = pollsHandler();
+                if (handler) handler.answerPoll(poll.pollId, checks.slice());
+                poll.lastVote = checks.slice();
+                poll.changingVote = false;
+                poll.showResults = true;
+                renderPolls();
+            });
+            submit.disabled = !checks.some(Boolean);
+        }
+        item.appendChild(row);
+    }
+
+    // PollResults.native
+    function renderPollResults(item, poll) {
+        pollHeader(item, poll);
+        const voters = new Set();
+        poll.answers.forEach(answer => answer.voters.forEach(user => voters.add(user.id)));
+        poll.answers.forEach(answer => {
+            const count = answer.voters.length;
+            const percentage = voters.size ? Math.round(count / voters.size * 100) : 0;
+            const block = el('div', 'poll-result');
+            const head = el('div', 'poll-result-header');
+            head.appendChild(el('span', '', answer.name));
+            head.appendChild(el('span', '', `(${count}) ${percentage}%`));
+            block.appendChild(head);
+            const bar = el('div', 'poll-bar');
+            const fill = el('div', 'poll-bar-fill');
+            fill.style.width = percentage + '%';
+            bar.appendChild(fill);
+            block.appendChild(bar);
+            if (poll.showDetails && count) {
+                const names = el('div', 'poll-voters');
+                answer.voters.forEach(user => names.appendChild(el('div', '', user.name || '')));
+                block.appendChild(names);
+            }
+            item.appendChild(block);
+        });
+        const links = el('div', 'poll-links');
+        const details = el('button', 'button tertiary link',
+            t(poll.showDetails ? 'polls.results.hideDetailedResults' : 'polls.results.showDetailedResults'));
+        details.addEventListener('click', () => { poll.showDetails = !poll.showDetails; renderPolls(); });
+        const vote = el('button', 'button tertiary link', t(poll.lastVote !== null ? 'polls.results.changeVote' : 'polls.results.vote'));
+        vote.addEventListener('click', () => { poll.changingVote = true; poll.showResults = false; renderPolls(); });
+        links.append(details, vote);
+        item.appendChild(links);
+    }
+
+    // PollCreate.native: question, at least two options, Cancel / Save. A
+    // saved poll is shown to its author first and sent with "Send".
+    function renderPollCreate(list) {
+        const draft = state.pollDraft;
+        const form = el('div', 'poll-create');
+        const fields = el('div', 'poll-create-fields');
+        form.appendChild(fields);
+        list.appendChild(form);
+        let save = null;
+        const valid = () => draft.question.trim().length > 0
+            && draft.answers.filter(answer => answer.trim()).length >= 2
+            && !draft.answers.some((answer, index) => answer.trim() && draft.answers.indexOf(answer) !== index);
+        const update = () => { if (save) save.disabled = !valid(); };
+        const field = (label, placeholder, value, onInput, errorText) => {
+            const box = el('label', 'poll-field');
+            box.appendChild(el('span', 'poll-field-label', label));
+            const input = el('input', 'field');
+            input.maxLength = POLL_CHAR_LIMIT;
+            input.placeholder = placeholder;
+            input.value = value;
+            input.addEventListener('input', () => onInput(input.value));
+            box.appendChild(input);
+            if (errorText !== undefined) {
+                const error = el('span', 'field-error', errorText);
+                box.appendChild(error);
+                box.error = error;
+            }
+            fields.appendChild(box);
+            return { box, input };
+        };
+        const questionField = field(t('polls.create.pollQuestion'), t('polls.create.questionPlaceholder'), draft.question,
+            value => { draft.question = value; update(); });
+        fields.appendChild(el('div', 'poll-separator'));
+        const options = [];
+        const checkUnique = () => options.forEach((option, index) => {
+            const value = draft.answers[index];
+            const duplicate = value !== '' && draft.answers.slice(0, index).includes(value);
+            option.input.classList.toggle('error', duplicate);
+            option.box.error.textContent = duplicate ? t('polls.errors.notUniqueOption', { index: index + 1 }) : '';
+        });
+        draft.answers.forEach((answer, index) => {
+            const option = field(t('polls.create.pollOption', { index: index + 1 }),
+                t('polls.create.answerPlaceholder', { index: index + 1 }), answer,
+                value => { draft.answers[index] = value; checkUnique(); update(); }, '');
+            if (draft.answers.length > 2) {
+                const remove = el('button', 'button tertiary link poll-remove', t('polls.create.removeOption'));
+                remove.addEventListener('click', event => {
+                    event.preventDefault();
+                    draft.answers.splice(index, 1);
+                    renderPolls();
+                });
+                option.box.appendChild(remove);
+            }
+            options.push(option);
+        });
+        checkUnique();
+        const buttons = el('div', 'poll-create-buttons');
+        if (state.serverConfig.showPollSingleAnswerSetting) {
+            const row = el('div', 'poll-switch-row');
+            const toggle = el('button', 'switch' + (draft.singleAnswer ? ' on' : ''));
+            toggle.addEventListener('click', () => { draft.singleAnswer = !draft.singleAnswer; toggle.classList.toggle('on', draft.singleAnswer); });
+            row.append(toggle, el('span', '', t('polls.create.singleAnswer')));
+            buttons.appendChild(row);
+        }
+        const add = el('button', 'button secondary wide', t('polls.create.addOption'));
+        add.disabled = draft.answers.length >= POLL_ANSWERS_LIMIT;
+        add.addEventListener('click', () => {
+            draft.answers.push('');
+            renderPolls();
+            const inputs = $('polls-list').querySelectorAll('.poll-create-fields input');
+            const last = inputs[inputs.length - 1];
+            if (last) last.focus();
+        });
+        buttons.appendChild(add);
+        const row = el('div', 'poll-buttons');
+        const cancel = el('button', 'button secondary', t('polls.create.cancel'));
+        cancel.addEventListener('click', () => { state.pollDraft = null; renderPolls(); });
+        save = el('button', 'button primary', t('polls.create.save'));
+        save.addEventListener('click', () => {
+            if (!valid()) return;
+            const answers = draft.answers.filter(answer => answer.trim()).map(name => ({ name, voters: [] }));
+            const pollId = draft.pollId || Math.floor(Math.random() * Number.MAX_SAFE_INTEGER).toString(36);
+            // Editing keeps the draft in its place in the list.
+            state.polls.set(pollId, { pollId, senderId: state.localId, question: draft.question, answers,
+                singleAnswer: draft.singleAnswer, changingVote: false, showResults: false, lastVote: null, saved: true });
+            state.pollDraft = null;
+            renderPolls();
+        });
+        row.append(cancel, save);
+        buttons.appendChild(row);
+        form.appendChild(buttons);
+        update();
+        if (!draft.question) setTimeout(() => questionField.input.focus(), 50);
+    }
+
+    function openPollCreate() {
+        state.pollDraft = { pollId: '', question: '', answers: ['', ''], singleAnswer: false };
+        renderPolls();
+    }
+
+    // Chat and Polls tabs (ChatAndPollsNavigator): shown when the server
+    // has the polls component.
+    function renderChatTabs() {
+        const polls = !!pollsHandler() && !state.serverConfig.disablePolls;
+        if (!polls) state.chatTab = 'chat';
+        $('chat-tabs').hidden = !polls;
+        $('chat-pane').hidden = state.chatTab !== 'chat';
+        $('polls-pane').hidden = state.chatTab !== 'polls';
+        $('chat').querySelector('h1').textContent = t('chat.title');
+        $('chat-tabs').querySelectorAll('[data-tab]').forEach(tab => {
+            const active = tab.dataset.tab === state.chatTab;
+            tab.classList.toggle('active', active);
+            const count = tab.dataset.tab === 'chat' ? state.unread : state.pollsUnread;
+            tab.textContent = t(`chat.tabs.${tab.dataset.tab}`) + (count && !active ? ` (${count})` : '');
+        });
+        if (state.chatTab === 'polls') { state.pollsUnread = 0; renderPolls(); }
+        else { state.unread = 0; renderChat(); }
     }
 
     // ---------------------------------------------------------- shared video
@@ -2132,6 +2452,9 @@
             statisticsDisplayName: cfg.displayName
         });
         if (prefs.disableP2p) options.p2p = Object.assign({}, config.p2p, { enabled: false });
+        state.polls = new Map();
+        state.pollsUnread = 0;
+        state.pollDraft = null;
         const conference = state.connection.initJitsiConference(state.roomName || backendSafeRoomName(cfg.room), options);
         state.conference = conference;
         // Events of a conference left for a breakout room are ignored.
@@ -2202,6 +2525,8 @@
             }
             render();
         });
+        if (C.POLL_RECEIVED) on(C.POLL_RECEIVED, onPollReceived);
+        if (C.POLL_ANSWER_RECEIVED) on(C.POLL_ANSWER_RECEIVED, onPollAnswerReceived);
         on(C.MESSAGE_RECEIVED, (id, text, ts, nick) => {
             const local = id === state.localId;
             const p = person(id);
@@ -2458,6 +2783,8 @@
             dialog.appendChild(el('div', 'dialog-title', t('dialog.login')));
             const username = el('input', 'field');
             username.type = 'text';
+            // Latin layout with @ on the on-screen keyboard.
+            username.inputMode = 'email';
             username.autocapitalize = 'none';
             username.autocomplete = 'username';
             username.spellcheck = false;
@@ -2637,6 +2964,13 @@
         $('tb-camera').addEventListener('click', switchCamera);
         $('tb-participants').addEventListener('click', () => openScreen('participants'));
         $('sheet-backdrop').addEventListener('click', closeSheet);
+        $('chat-tabs').querySelectorAll('[data-tab]').forEach(tab => tab.addEventListener('click', () => {
+            state.chatTab = tab.dataset.tab;
+            $('chat-input').blur();
+            renderChatTabs();
+            render();
+        }));
+        $('poll-create').addEventListener('click', openPollCreate);
         $('insecure-label').addEventListener('click', event => { event.stopPropagation(); showExpandedLabel('insecure'); });
         $('audio-only-label').addEventListener('click', event => { event.stopPropagation(); showExpandedLabel('audio-only'); });
         $('expanded-label').addEventListener('click', event => { if (event.target.tagName !== 'A') $('expanded-label').hidden = true; });

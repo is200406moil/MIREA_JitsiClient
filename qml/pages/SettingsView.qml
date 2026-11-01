@@ -173,7 +173,7 @@ SilicaFlickable {
             }
             Label {
                 anchors { right: parent.right; rightMargin: 24; verticalCenter: parent.verticalCenter }
-                text: "0.1 build 74"
+                text: "0.1 build 75"
                 color: AppStyle.text
                 font.pixelSize: AppStyle.bodyShort
             }
