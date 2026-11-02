@@ -10,9 +10,18 @@ ApplicationWindow {
         target: appState
         onInterfaceLanguageChanged: languageRefresh.restart()
     }
+    // The strings of the pages are bound once, so the pages are created again
+    // in the new language. The language page is still being popped when the
+    // language changes; a busy page stack ignores the replacement.
     Timer {
         id: languageRefresh
-        interval: 0
-        onTriggered: pageStack.replace(Qt.resolvedUrl("pages/MainPage.qml"), {selectedTab:2}, PageStackAction.Immediate)
+        interval: 50
+        onTriggered: {
+            if (pageStack.busy) {
+                restart()
+                return
+            }
+            pageStack.replaceAbove(null, Qt.resolvedUrl("pages/MainPage.qml"), {selectedTab: 2}, PageStackAction.Immediate)
+        }
     }
 }

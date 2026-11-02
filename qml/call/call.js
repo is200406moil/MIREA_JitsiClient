@@ -628,8 +628,9 @@
         build(dialog);
         dialog.hidden = false;
         $('dialog-backdrop').hidden = false;
-        const input = dialog.querySelector('input');
-        if (input) setTimeout(() => input.focus(), 50);
+        // No focus() here: in the Aurora WebView a field focused by script
+        // gets no keyboard session, and the first key closes the keyboard.
+        // Fields are focused by the user's tap.
     }
 
     function dialogActions(dialog, actions) {
@@ -1343,7 +1344,6 @@
                 input.addEventListener('input', () => { add.disabled = !input.value; });
                 row.append(button(t('dialog.Cancel'), showSet), add);
                 section.append(input, row);
-                setTimeout(() => input.focus(), 50);
             };
             const showLocked = () => {
                 section.textContent = '';
@@ -2638,9 +2638,6 @@
         add.addEventListener('click', () => {
             draft.answers.push('');
             renderPolls();
-            const inputs = $('polls-list').querySelectorAll('.poll-create-fields input');
-            const last = inputs[inputs.length - 1];
-            if (last) last.focus();
         });
         buttons.appendChild(add);
         const row = el('div', 'poll-buttons');
@@ -2661,7 +2658,6 @@
         buttons.appendChild(row);
         form.appendChild(buttons);
         update();
-        if (!draft.question) setTimeout(() => questionField.input.focus(), 50);
     }
 
     function openPollCreate() {
@@ -3269,6 +3265,7 @@
         let text = null;
         const rejoin = async () => {
             clearInterval(reconnectTimer);
+            reconnectTimer = 0;
             closeDialog();
             showConnecting(t('connectingOverlay.joiningRoom'));
             if (retry) { retry(); return; }
@@ -3280,7 +3277,7 @@
             text = el('div', 'dialog-text', t('dialog.conferenceReloadMsg', { seconds }));
             dialog.appendChild(text);
             dialogActions(dialog, [
-                { label: t('dialog.Cancel'), onClick: () => { clearInterval(reconnectTimer); closeDialog(); leave('cancel'); } },
+                { label: t('dialog.Cancel'), onClick: () => { clearInterval(reconnectTimer); reconnectTimer = 0; closeDialog(); leave('cancel'); } },
                 { label: t('dialog.rejoinNow'), type: 'primary', onClick: rejoin }
             ]);
         });
@@ -3363,12 +3360,18 @@
         on(C.CONFERENCE_JOINED, onConferenceJoined);
         on(C.CONFERENCE_FAILED, onConferenceFailed);
         on(C.CONFERENCE_ERROR, error => log('conference error', error));
-        on(C.CONFERENCE_LEFT, () => { if (!state.leaving) leave('left'); });
+        // After a failure (FOCUS_LEFT and the like) the library leaves the
+        // room by itself; that is not the user leaving while the reload
+        // dialog waits to rejoin.
+        on(C.CONFERENCE_LEFT, () => { if (!state.leaving && !reconnectTimer) leave('left'); });
         on(C.KICKED, (actor, reason) => {
             const name = actor && actor.getDisplayName ? actor.getDisplayName() : '';
             state.leaving = true;
-            confirmDialog({ title: t('dialog.kickTitle', { participantDisplayName: name || t('notify.somebody') }),
-                text: reason || t('dialog.kickMessage', { participantDisplayName: name || t('notify.somebody') }),
+            // conference/actions.native: an AlertDialog with the kick title
+            // alone; the reason the server sends is not shown.
+            log('kicked', reason || '');
+            confirmDialog({ title: actor ? t('dialog.kickTitle', { participantDisplayName: name || t('notify.somebody') })
+                : t('dialog.kickSystemTitle'),
                 cancelLabel: null, onConfirm: () => finish('kicked') });
         });
         on(C.USER_JOINED, (id, participant) => {
@@ -3745,7 +3748,6 @@
             ]);
             const ok = row.lastChild;
             password.addEventListener('keydown', event => { if (event.key === 'Enter') submit(); });
-            username.addEventListener('keydown', event => { if (event.key === 'Enter') password.focus(); });
 
             function submit() {
                 const name = username.value.trim();
