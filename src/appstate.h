@@ -7,6 +7,18 @@
 #include <QTcpServer>
 #include <QVariantList>
 
+// The source of screen sharing frames (ScreenCapture in the application;
+// the unit tests run without one).
+class ScreenFrameSource
+{
+public:
+    virtual ~ScreenFrameSource() = default;
+    virtual bool start() = 0;
+    virtual void stop() = 0;
+    virtual QString error() const = 0;
+    virtual QByteArray frame(quint64 *serial) const = 0;
+};
+
 class AppState : public QObject
 {
     Q_OBJECT
@@ -24,6 +36,7 @@ class AppState : public QObject
 
 public:
     explicit AppState(QObject *parent = nullptr, const QString &settingsFile = QString());
+    void setScreenFrameSource(ScreenFrameSource *source) { m_screen = source; }
     QString displayName() const;
     QString email() const;
     QString avatarUrl() const;
@@ -73,6 +86,7 @@ private:
 
     QSettings *m_settings;
     QTcpServer m_http;
+    ScreenFrameSource *m_screen = nullptr;
     QVariantList m_rooms;
     QVariantMap m_activeRoom;
     qint64 m_meetingStarted = 0;

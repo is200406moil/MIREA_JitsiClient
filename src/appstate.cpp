@@ -49,6 +49,8 @@ QVariantMap AppState::preferences() const
     for (const QString &key : falseDefaults) values[key] = m_settings->value("client/" + key, false).toBool();
     for (const QString &key : trueDefaults) values[key] = m_settings->value("client/" + key, true).toBool();
     values["language"] = m_settings->value("client/language", "ru").toString();
+    // The YouTube or RTMP stream key, kept like jitsi-meet's setLiveStreamKey.
+    values["liveStreamKey"] = m_settings->value("client/liveStreamKey").toString();
     return values;
 }
 
@@ -59,6 +61,10 @@ bool AppState::setPreference(const QString &key, const QVariant &value)
     if (key == "language") {
         if (value.toString() != "ru" && value.toString() != "en") return false;
         m_settings->setValue("client/" + key, value.toString());
+    } else if (key == "liveStreamKey") {
+        const QString text = value.toString().trimmed();
+        if (text.size() > 1024) return false;
+        m_settings->setValue("client/" + key, text);
     } else {
         if (value.type() != QVariant::Bool) return false;
         m_settings->setValue("client/" + key, value.toBool());
@@ -337,6 +343,8 @@ bool AppState::startMeeting(const QVariantMap &room, bool muteAudio, bool muteVi
     config["inviteUrl"] = address + "/" + QString::fromLatin1(QUrl::toPercentEncoding(roomName));
     config["securityHelpUrl"] = QStringLiteral("https://jitsi.github.io/handbook/docs/faq/#how-can-i-protect-my-meetings-with-jitsi");
     config["preferences"] = QJsonObject::fromVariantMap(preferences());
+    // The WebView cannot capture the screen; the app does it (ScreenCapture).
+    config["nativeScreenShare"] = m_screen != nullptr;
     QByteArray json = QJsonDocument(config).toJson(QJsonDocument::Compact);
     json.replace("<", "\\u003c");
     json.replace(">", "\\u003e");
@@ -358,6 +366,7 @@ bool AppState::isTrustedOrigin(const QString &origin) const
 
 void AppState::finishMeeting()
 {
+    if (m_screen) m_screen->stop();
     if (m_meetingStarted > 0) {
         for (int i = 0; i < m_rooms.size(); ++i) {
             QVariantMap room = m_rooms.at(i).toMap();
@@ -468,8 +477,23 @@ void AppState::handleRequest(QTcpSocket *socket)
         if (name == "joined") markJoined();
         if (name == "token") m_tokens.insert(QUrl(m_activeRoom.value("server").toString()).host(), data.value("jwt").toString());
         if (name == "log") appendCallLog(data.value("message").toString());
+        if (name == "screenShare" && m_screen) {
+            if (data.value("active").toBool()) m_screen->start();
+            else m_screen->stop();
+        }
         sendResponse(socket, 200, "application/json", "{}");
         emit conferenceEvent(name, data);
+        return;
+    }
+    if (request[0] == "GET" && request[1].startsWith(route + "screen.jpg")) {
+        // The latest screen sharing frame: 204 while none arrived yet, 503
+        // with the reason when the capture failed.
+        const QString failure = m_screen ? m_screen->error() : QStringLiteral("Screen capture is not available");
+        if (!failure.isEmpty()) { sendResponse(socket, 503, "text/plain; charset=utf-8", failure.toUtf8()); return; }
+        quint64 serial = 0;
+        const QByteArray jpeg = m_screen->frame(&serial);
+        if (jpeg.isEmpty()) { sendResponse(socket, 204, "text/plain", QByteArray()); return; }
+        sendResponse(socket, 200, "image/jpeg", jpeg);
         return;
     }
     if (request[0] == "GET" && request[1].startsWith(route)) {

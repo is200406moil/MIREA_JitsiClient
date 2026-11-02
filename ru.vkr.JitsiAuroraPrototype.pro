@@ -6,7 +6,8 @@ CONFIG += \
     auroraapp
 
 PKGCONFIG += \
-    aurorawebview
+    aurorawebview \
+    streamcamera
 
 contains(QT_ARCH, x86_64) {
     PKGCONFIG += gstreamer-1.0
@@ -24,11 +25,13 @@ contains(QT_ARCH, x86_64) {
 
 SOURCES += \
     src/main.cpp \
-    src/appstate.cpp
+    src/appstate.cpp \
+    src/screencapture.cpp
 
 HEADERS += \
     src/appstate.h \
-    src/clienttranslator.h
+    src/clienttranslator.h \
+    src/screencapture.h
 
 DISTFILES += \
     rpm/ru.vkr.JitsiAuroraPrototype.spec \

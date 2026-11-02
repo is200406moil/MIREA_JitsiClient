@@ -11,3 +11,4 @@ BottomNavigation 1.0 BottomNavigation.qml
 RoomMenuSheet 1.0 RoomMenuSheet.qml
 SettingDivider 1.0 SettingDivider.qml
 PageHeader 1.0 PageHeader.qml
+AlertDialog 1.0 AlertDialog.qml

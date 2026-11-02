@@ -353,3 +353,13 @@ h1 { margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; }
     font-weight: 600; font-size: 16px; }
 .visitors-label[hidden] { display: none; }
 .visitors-heading { color: var(--warning02); }
+
+/* RecordingLabel (iconError) and StartLiveStreamDialog.native. */
+.label.live { background: var(--danger); padding: 4px; }
+.label.live.pending { opacity: .6; }
+.expanded-label.live { background: var(--danger); }
+.header-action { margin-left: auto; padding: 0 12px; height: 40px; border: 0; background: none; color: var(--action01);
+    font: inherit; font-weight: 600; font-size: 16px; }
+.stream-form { padding: 16px; }
+.stream-form .field-error { margin-top: 8px; }
+.stream-links { display: flex; flex-direction: column; align-items: flex-start; margin-top: 16px; }

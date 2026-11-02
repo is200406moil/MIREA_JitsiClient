@@ -3,6 +3,7 @@
 #include <webenginecontext.h>
 #include "appstate.h"
 #include "clienttranslator.h"
+#include "screencapture.h"
 
 int main(int argc, char *argv[])
 {
@@ -20,7 +21,28 @@ int main(int argc, char *argv[])
         // library. The emulator's actual capture/decoder plugins stay in /usr.
         if (qgetenv("GST_PLUGIN_SYSTEM_PATH_1_0").isEmpty())
             qputenv("GST_PLUGIN_SYSTEM_PATH_1_0", "/usr/lib64/gstreamer-1.0");
-        qputenv("STREAMCAMERA_PLUGIN_DIR", privateLibs + "/streamcamera");
+        // StreamCamera reads one plugin directory. The private camera plugins
+        // and the system screen camera (screengrab, which may not be bundled:
+        // it depends on libvideopipe) are linked together in the cache.
+        QByteArray pluginDir = privateLibs + "/streamcamera";
+        const QString systemScreen = QStringLiteral("/usr/lib64/streamcamera/plugins/libstreamcamera-screengrab.so");
+        const QString links = QDir::homePath() + QStringLiteral("/.cache/ru.vkr/JitsiAuroraPrototype/streamcamera");
+        if (QFile::exists(systemScreen) && QDir().mkpath(links)) {
+            const QDir bundled(QString::fromLatin1(pluginDir));
+            QStringList sources;
+            for (const QString &name : bundled.entryList({QStringLiteral("*.so")}, QDir::Files))
+                sources << bundled.filePath(name);
+            sources << systemScreen;
+            for (const QString &source : sources) {
+                const QString link = links + '/' + QFileInfo(source).fileName();
+                if (QFileInfo(link).symLinkTarget() != source) {
+                    QFile::remove(link);
+                    QFile::link(source, link);
+                }
+            }
+            pluginDir = links.toUtf8();
+        }
+        qputenv("STREAMCAMERA_PLUGIN_DIR", pluginDir);
         qputenv("GSTREAMER_CAMERA_DEVICE_PROVIDER", "aurorajitsiemulatorprovider");
     }
     Aurora::WebView::WebEngineContext::InitBrowser(argc, argv);
@@ -30,6 +52,9 @@ int main(int argc, char *argv[])
     application->setApplicationName(QStringLiteral("JitsiAuroraPrototype"));
 
     AppState appState;
+    ScreenCapture screenCapture;
+    appState.setScreenFrameSource(&screenCapture);
+    QObject::connect(&screenCapture, &ScreenCapture::message, &appState, &AppState::appendCallLog, Qt::QueuedConnection);
     ClientTranslator english(Aurora::Application::pathTo("qml/languages/en.json").toLocalFile());
     auto applyLanguage = [&]() {
         application->removeTranslator(&english);

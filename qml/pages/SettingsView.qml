@@ -26,6 +26,14 @@ SilicaFlickable {
         }
     }
 
+    // The page item scaled by AppStyle.dp, so that an alert covers the page
+    // and has the dp sizes of the rest of the screen.
+    function scaledRoot() {
+        var item = view
+        while (item.parent && item.scale === 1) item = item.parent
+        return item
+    }
+
     Rectangle { anchors.fill: parent; color: AppStyle.surface }
 
     Column {
@@ -224,13 +232,28 @@ SilicaFlickable {
         SettingDivider {}
         SettingSection { text: appState.t("settingsView.advanced") }
         SettingToggle { text: appState.t("settingsView.disableP2P"); preferenceKey: "disableP2p" }
-        SettingToggle { text: appState.t("settingsView.disableCrashReporting"); preferenceKey: "disableCrashReporting" }
+        SettingToggle {
+            text: appState.t("settingsView.disableCrashReporting")
+            checked: appState.preferences.disableCrashReporting === true
+            // AdvancedSection: turning it on asks first.
+            onToggled: {
+                if (!value) {
+                    appState.setPreference("disableCrashReporting", false)
+                    return
+                }
+                var alert = alertComponent.createObject(view.scaledRoot(), {
+                    title: appState.t("settingsView.alertTitle"),
+                    text: appState.t("settingsView.disableCrashReportingWarning")
+                })
+                alert.accepted.connect(function() { appState.setPreference("disableCrashReporting", true) })
+            }
+        }
         SettingDivider {}
         SettingSection { text: appState.t("settingsView.buildInfoSection") }
         Repeater {
             // Version of the application and of the Aurora OS SDK it is built with.
             model: [
-                { label: "settingsView.version", value: "0.1 build 84" },
+                { label: "settingsView.version", value: "0.1 build 95" },
                 { label: "settingsView.sdkVersion", value: "5.2.1.200" }
             ]
             delegate: Item {
@@ -289,4 +312,5 @@ SilicaFlickable {
         }
     }
     VerticalScrollDecorator {}
+    Component { id: alertComponent; AlertDialog {} }
 }

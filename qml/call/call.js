@@ -216,6 +216,7 @@
         pollDraft: null,
         volumes: new Map(),
         iAmVisitor: false,
+        liveStream: { status: 'off', session: null },
         demoteActor: '',
         promotionRequests: new Map(),
         visitorCount: 0,
@@ -475,6 +476,8 @@
         $('room-timer').hidden = !state.startedAt;
         $('insecure-label').hidden = !cfg.insecureRoomName;
         $('audio-only-label').hidden = !state.audioOnly;
+        $('live-label').hidden = !liveStreamRunning();
+        $('live-label').classList.toggle('pending', state.liveStream.status === 'pending');
         // A visitor is not one of the meeting participants.
         const count = state.remotes.size + (state.iAmVisitor ? 0 : 1);
         $('participants-count').hidden = !state.joined;
@@ -566,6 +569,9 @@
             }
         } else if (kind === 'audio-only') {
             label.textContent = t('videoStatus.lowBandwidthModeExpanded');
+        } else if (kind === 'live') {
+            // RecordingExpandedLabel
+            label.textContent = t(state.liveStream.status === 'pending' ? 'liveStreaming.expandedPending' : 'liveStreaming.expandedOn');
         }
         label.hidden = false;
         expandedTimer = setTimeout(() => { label.hidden = true; }, 5000);
@@ -720,6 +726,10 @@
             sheetItem(sheet, state.audioOnly ? 'video' : 'performance',
                 t(state.audioOnly ? 'toolbar.lowBandwidthModeOff' : 'toolbar.lowBandwidthModeOn'), toggleAudioOnly);
             sheetItem(sheet, state.locked || state.lobbyEnabled ? 'security-on' : 'security-off', t('toolbar.security'), openSecurityDialog);
+            // LiveStreamButton
+            if (liveStreamButtonVisible()) {
+                sheetItem(sheet, 'sites', t(liveStreamRunning() ? 'dialog.stopLiveStreaming' : 'dialog.startLiveStreaming'), toggleLiveStream);
+            }
             if (whiteboardButtonVisible()) {
                 sheetItem(sheet, 'whiteboard', t(state.whiteboardOpen ? 'toolbar.hideWhiteboard' : 'toolbar.showWhiteboard'), toggleWhiteboard);
             }
@@ -790,6 +800,8 @@
         $('breakout').hidden = name !== 'breakout';
         $('gifs').hidden = name !== 'gifs';
         $('stats').hidden = name !== 'stats';
+        $('livestream').hidden = name !== 'livestream';
+        if (name === 'livestream') renderLiveStreamScreen();
         if (name === 'gifs') openGifMenu();
         if (name === 'stats') renderSpeakerStats();
         if (name === 'chat') {
@@ -808,6 +820,8 @@
         $('breakout').hidden = true;
         $('gifs').hidden = true;
         $('stats').hidden = true;
+        $('livestream').hidden = true;
+        $('stream-key').blur();
         $('chat-input').blur();
         render();
     }
@@ -1216,10 +1230,48 @@
         });
     }
 
+    // MuteEveryoneDialog.native: the "allow participants to unmute
+    // themselves" switch is on while audio moderation is off, and the text
+    // follows the switch.
     function muteAll() {
-        confirmDialog({
-            title: t('dialog.muteEveryoneTitle'), text: t('dialog.muteEveryoneDialog'), confirmLabel: t('dialog.muteParticipantButton'),
-            onConfirm: () => [...state.remotes.keys()].forEach(id => state.conference.muteParticipant(id, 'audio'))
+        const conference = state.conference;
+        const supported = !!conference && typeof conference.isAVModerationSupported === 'function'
+            && conference.isAVModerationSupported() && !isInBreakoutRoom();
+        let moderation = !!state.avModeration.audio;
+        openDialog(dialog => {
+            dialog.appendChild(el('div', 'dialog-title', t('dialog.muteEveryoneTitle')));
+            const text = el('div', 'dialog-text');
+            const updateText = () => {
+                text.textContent = t(moderation ? 'dialog.muteEveryoneDialogModerationOn' : 'dialog.muteEveryoneDialog');
+            };
+            updateText();
+            dialog.appendChild(text);
+            if (supported) {
+                dialog.appendChild(el('div', 'sheet-divider'));
+                const row = el('div', 'switch-row');
+                row.appendChild(el('span', '', t('dialog.moderationAudioLabel')));
+                const toggle = el('button', 'switch' + (moderation ? '' : ' on'));
+                toggle.addEventListener('click', () => {
+                    moderation = !moderation;
+                    toggle.classList.toggle('on', !moderation);
+                    updateText();
+                });
+                row.appendChild(toggle);
+                dialog.appendChild(row);
+            }
+            dialogActions(dialog, [
+                { label: t('dialog.Cancel'), onClick: closeDialog },
+                { label: t('dialog.muteParticipantButton'), type: 'primary', onClick: () => {
+                    closeDialog();
+                    // Jicofo mutes on the bridge only participants that may
+                    // not unmute, so the moderation changes first.
+                    if (supported && moderation !== !!state.avModeration.audio) {
+                        if (moderation) conference.enableAVModeration('audio');
+                        else conference.disableAVModeration('audio');
+                    }
+                    [...state.remotes.keys()].forEach(id => conference.muteParticipant(id, 'audio'));
+                } }
+            ]);
         });
     }
 
@@ -1502,7 +1554,71 @@
     // ---------------------------------------------------------- screen share
 
     function screenShareSupported() {
-        return !!(navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function');
+        return !!cfg.nativeScreenShare
+            || !!(navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function');
+    }
+
+    // Screen frames from the application (ScreenCapture over StreamCamera):
+    // JPEG frames of the local server are drawn on a canvas, and the canvas
+    // stream becomes the desktop track.
+    let nativeShare = null;
+
+    async function nativeScreenStream() {
+        notify('screenShare', { active: true });
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        let stopped = false;
+        let drawn = false;
+        const frameUrl = new URL('screen.jpg', location.href).toString();
+        const next = async () => {
+            if (stopped) return;
+            try {
+                const response = await fetch(frameUrl, { cache: 'no-store' });
+                if (response.status === 503) throw new Error(await response.text());
+                if (response.status === 200) {
+                    const bitmap = await createImageBitmap(await response.blob());
+                    if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+                        canvas.width = bitmap.width;
+                        canvas.height = bitmap.height;
+                    }
+                    context.drawImage(bitmap, 0, 0);
+                    if (bitmap.close) bitmap.close();
+                    drawn = true;
+                }
+            } catch (error) {
+                if (!drawn) { stopped = true; throw error; }
+                log('screen frame', error.message || error);
+            }
+            if (!stopped) nativeShare.timer = setTimeout(next, 200);
+        };
+        nativeShare = { stop: () => { stopped = true; clearTimeout(nativeShare && nativeShare.timer); notify('screenShare', { active: false }); } };
+        // The first frame sets the size of the shared picture.
+        const deadline = Date.now() + 8000;
+        while (!drawn) {
+            const response = await fetch(frameUrl, { cache: 'no-store' });
+            if (response.status === 503) {
+                const reason = await response.text();
+                nativeShare.stop();
+                nativeShare = null;
+                throw new Error(reason);
+            }
+            if (response.status === 200) {
+                const bitmap = await createImageBitmap(await response.blob());
+                canvas.width = bitmap.width;
+                canvas.height = bitmap.height;
+                context.drawImage(bitmap, 0, 0);
+                drawn = true;
+                break;
+            }
+            if (Date.now() > deadline) {
+                nativeShare.stop();
+                nativeShare = null;
+                throw new Error('No screen frames');
+            }
+            await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        nativeShare.timer = setTimeout(next, 200);
+        return canvas.captureStream(5);
     }
 
     async function toggleScreenShare() {
@@ -1513,14 +1629,21 @@
                 await stopScreenShare();
             } else {
                 let tracks;
-                try {
-                    tracks = await JitsiMeetJS.createLocalTracks({ devices: ['desktop'] });
-                } catch (error) {
-                    log('screen share with audio', error);
-                    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+                if (cfg.nativeScreenShare) {
+                    const stream = await nativeScreenStream();
                     tracks = await Promise.resolve(JitsiMeetJS.createLocalTracksFromMediaStreams([{
                         stream, sourceType: 'screen', mediaType: 'video', videoType: 'desktop'
                     }]));
+                } else {
+                    try {
+                        tracks = await JitsiMeetJS.createLocalTracks({ devices: ['desktop'] });
+                    } catch (error) {
+                        log('screen share with audio', error);
+                        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+                        tracks = await Promise.resolve(JitsiMeetJS.createLocalTracksFromMediaStreams([{
+                            stream, sourceType: 'screen', mediaType: 'video', videoType: 'desktop'
+                        }]));
+                    }
                 }
                 const desktop = tracks.find(track => track.getType() === 'video');
                 tracks.filter(track => track !== desktop).forEach(track => track.dispose());
@@ -1533,7 +1656,8 @@
                 state.videoMuted = false;
             }
         } catch (error) {
-            log('screen share', error);
+            log('screen share', error && (error.message || error.name) || error);
+            if (nativeShare) { nativeShare.stop(); nativeShare = null; }
             if (!error || error.name !== 'gum.permission_denied') {
                 showNotification({ type: 'error', title: t('dialog.screenSharingFailed') });
             }
@@ -1545,6 +1669,7 @@
 
     async function stopScreenShare() {
         state.screenSharing = false;
+        if (nativeShare) { nativeShare.stop(); nativeShare = null; }
         let camera = null;
         if (state.cameraTrackBeforeShare === 'on' && !state.audioOnly) {
             try { camera = await createTrack('video'); } catch (error) { log('camera after share', error); }
@@ -1655,9 +1780,13 @@
         return handler && handler.isSupported() ? handler : null;
     }
 
+    // The restrictions as the server sent them (UPDATE_CONFERENCE_METADATA).
+    // A visitor node has no metadata component to write to, but still gets
+    // the metadata of the main room, thus no isSupported() check here.
     function roomPermissions() {
-        const handler = roomMetadata();
-        return (handler && handler.getMetadata().permissions) || {};
+        const handler = state.conference && state.conference.getMetadataHandler && state.conference.getMetadataHandler();
+        const metadata = handler && handler.getMetadata();
+        return (metadata && metadata.permissions) || {};
     }
 
     function moderationState() {
@@ -1685,7 +1814,11 @@
             showReactions: !config.disableReactionsModeration,
             chatRestricted: !!permissions.groupChatRestricted,
             privateChatRestricted: !!permissions.privateChatRestricted,
-            showChat: !!handler && !!config.showChatPermissionsModeratorSetting && !handler.getMetadata().allownersEnabled
+            // The released mobile clients show the chat restrictions always
+            // (neither showChatPermissionsModeratorSetting nor allowners hide
+            // them; visitors stay restricted in an allowners room). They are
+            // kept in the room metadata, thus need it.
+            showChat: !!handler
         };
     }
 
@@ -1998,6 +2131,146 @@
             item.appendChild(actions);
             container.appendChild(item);
         });
+    }
+
+    // ----------------------------------------------------------- live stream
+
+    // react/features/recording, LiveStream: Jibri streams the meeting to
+    // YouTube (or any RTMP server) with the stream key entered here.
+    const JITSI_LIVE_STREAMING_HELP_LINK = 'https://jitsi.org/live';
+    const YOUTUBE_TERMS_URL = 'https://www.youtube.com/t/terms';
+    const GOOGLE_PRIVACY_POLICY = 'https://policies.google.com/privacy';
+    const FOUR_GROUPS_DASH_SEPARATED = /^(?:[a-zA-Z0-9]{4}(?:-(?!$)|$)){4}/;
+    const STREAM_KEY_OR_URL_REGEXP = /^(?:rtmps?:\/\/\S+|[a-z0-9_.~?=&/-]{6,})$/i;
+
+    // getLiveStreaming of LiveStream/functions.ts.
+    function liveStreamingConfig() {
+        const config = state.serverConfig || {};
+        const liveStreaming = config.liveStreaming || {};
+        const hasGoogleApi = !!config.googleApiApplicationClientID;
+        const isYouTubeTerms = liveStreaming.termsLink === YOUTUBE_TERMS_URL || (hasGoogleApi && !liveStreaming.termsLink);
+        const isGooglePrivacy = liveStreaming.dataPrivacyLink === GOOGLE_PRIVACY_POLICY || (hasGoogleApi && !liveStreaming.dataPrivacyLink);
+        let regexp = null;
+        try { regexp = liveStreaming.validatorRegExpString && new RegExp(liveStreaming.validatorRegExpString); } catch (error) { regexp = null; }
+        return {
+            enabled: !!liveStreaming.enabled,
+            helpURL: liveStreaming.helpLink || JITSI_LIVE_STREAMING_HELP_LINK,
+            termsURL: liveStreaming.termsLink || (hasGoogleApi ? YOUTUBE_TERMS_URL : ''),
+            dataPrivacyURL: liveStreaming.dataPrivacyLink || (hasGoogleApi ? GOOGLE_PRIVACY_POLICY : ''),
+            termsLabelKey: isYouTubeTerms ? 'liveStreaming.youtubeTerms' : 'liveStreaming.terms',
+            dataPrivacyLabelKey: isGooglePrivacy ? 'liveStreaming.googlePrivacyPolicy' : 'liveStreaming.privacyPolicy',
+            streamKeyPlaceholderKey: hasGoogleApi ? 'liveStreaming.enterStreamKey' : 'liveStreaming.enterStreamKeyGeneric',
+            streamLinkRegexp: regexp || (hasGoogleApi ? FOUR_GROUPS_DASH_SEPARATED : STREAM_KEY_OR_URL_REGEXP)
+        };
+    }
+
+    // isLiveStreamingButtonVisible: enabled, a moderator, not in a breakout room.
+    function liveStreamButtonVisible() {
+        return liveStreamingConfig().enabled && isModerator() && !isInBreakoutRoom() && !state.iAmVisitor;
+    }
+
+    function liveStreamRunning() {
+        return state.liveStream.status === 'on' || state.liveStream.status === 'pending';
+    }
+
+    function toggleLiveStream() {
+        if (liveStreamRunning()) {
+            // StopLiveStreamDialog
+            confirmDialog({
+                text: t('dialog.stopStreamingWarning'), confirmLabel: t('dialog.stopLiveStreaming'),
+                onConfirm: () => {
+                    const session = state.liveStream.session;
+                    if (session && state.conference) state.conference.stopRecording(session.getID());
+                }
+            });
+        } else openScreen('livestream');
+    }
+
+    // StartLiveStreamDialog.native + StreamKeyForm.native
+    function renderLiveStreamScreen() {
+        const config = liveStreamingConfig();
+        const input = $('stream-key');
+        input.placeholder = t(config.streamKeyPlaceholderKey);
+        input.value = prefs.liveStreamKey || '';
+        const error = $('stream-key-error');
+        const validate = () => !input.value.trim() || config.streamLinkRegexp.test(input.value.trim());
+        error.textContent = t('liveStreaming.invalidStreamKey');
+        error.hidden = validate();
+        input.oninput = () => { error.hidden = validate(); };
+        const links = $('stream-links');
+        links.textContent = '';
+        [[config.helpURL, 'liveStreaming.streamIdHelp'], [config.termsURL, config.termsLabelKey],
+            [config.dataPrivacyURL, config.dataPrivacyLabelKey]].forEach(([url, key]) => {
+            if (!url) return;
+            const link = el('button', 'button tertiary link', t(key));
+            link.addEventListener('click', () => notify('openUrl', { url }));
+            links.appendChild(link);
+        });
+    }
+
+    function startLiveStream() {
+        const key = $('stream-key').value.trim();
+        if (!key || !state.conference) return;
+        if (!liveStreamingConfig().streamLinkRegexp.test(key)) { $('stream-key-error').hidden = false; return; }
+        prefs.liveStreamKey = key;
+        notify('preference', { key: 'liveStreamKey', value: key });
+        closeScreen();
+        state.liveStream = { status: 'pending', session: null };
+        // showPendingRecordingNotification
+        showNotification({ key: 'live-stream', title: t('dialog.liveStreaming'), description: t('liveStreaming.pending') });
+        render();
+        Promise.resolve(state.conference.startRecording({ mode: 'stream', streamId: key }))
+            .catch(error => {
+                log('live stream', error && (error.message || error));
+                state.liveStream = { status: 'off', session: null };
+                showLiveStreamError(error && (error.message || error));
+                render();
+            });
+    }
+
+    // _showRecordingErrorNotification for the stream mode.
+    function showLiveStreamError(error) {
+        const errors = JitsiMeetJS.constants.recording.error;
+        let title = t('liveStreaming.failedToStart');
+        let description = t('liveStreaming.error');
+        if (error === errors.SERVICE_UNAVAILABLE) {
+            title = t('liveStreaming.unavailableTitle');
+            description = t('recording.unavailable', { serviceName: t('liveStreaming.serviceName') });
+        } else if (error === errors.RESOURCE_CONSTRAINT) {
+            title = t('liveStreaming.busyTitle');
+            description = t('liveStreaming.busy');
+        } else if (error === errors.UNEXPECTED_REQUEST) {
+            title = t('liveStreaming.inProgress');
+            description = t('liveStreaming.sessionAlreadyActive');
+        } else if (error === errors.POLICY_VIOLATION) {
+            description = t('liveStreaming.policyError');
+        }
+        showNotification({ key: 'live-stream', type: 'error', title, description, timeout: 10000 });
+    }
+
+    function onRecorderStateChanged(session) {
+        if (!session || session.getMode() !== 'stream') return;
+        const status = session.getStatus();
+        const previous = state.liveStream.status;
+        state.liveStream = { status, session: status === 'off' ? null : session };
+        const nameOf = who => {
+            const id = who && (typeof who === 'string' ? who : who.getId && who.getId());
+            const p = id && person(id);
+            return p ? displayNameOf(p) : '';
+        };
+        if (status === 'on' && previous !== 'on') {
+            const name = nameOf(session.getInitiator());
+            showNotification({ key: 'live-stream', title: t('dialog.liveStreaming'),
+                description: name ? t('liveStreaming.onBy', { name }) : t('liveStreaming.on') });
+        } else if (status === 'off') {
+            if (session.getError()) showLiveStreamError(session.getError());
+            else if (previous === 'on') {
+                const name = nameOf(session.getTerminator());
+                showNotification({ key: 'live-stream', title: t('dialog.liveStreaming'),
+                    description: name ? t('liveStreaming.offBy', { name }) : t('liveStreaming.off') });
+            }
+        }
+        render();
     }
 
     // ------------------------------------------------------------------ GIFs
@@ -3099,12 +3372,15 @@
                 cancelLabel: null, onConfirm: () => finish('kicked') });
         });
         on(C.USER_JOINED, (id, participant) => {
+            // commonUserJoinedHandling: hidden participants (the recorder or
+            // the live streaming bot) are not participants of the meeting.
+            if (participant.isHidden()) return;
             const p = {
                 id, name: participant.getDisplayName(), role: participant.getRole(), tracks: {},
                 raisedHand: isRaised(participant.getProperty && participant.getProperty('raisedHand')), avatarURL: ''
             };
             state.remotes.set(id, p);
-            if (state.joined && !participant.isHidden()) {
+            if (state.joined) {
                 showNotification({ key: 'joined', title: t('notify.connectedOneMember', { name: displayNameOf(p) }) });
                 playSound('joined');
             }
@@ -3241,6 +3517,7 @@
             moderationChanged();
         });
         on(C.START_MUTED_POLICY_CHANGED, onStartMutedPolicy);
+        on(C.RECORDER_STATE_CHANGED, onRecorderStateChanged);
         if (C.VISITORS_MESSAGE) on(C.VISITORS_MESSAGE, onVisitorsMessage);
         if (C.VISITORS_REJECTION) on(C.VISITORS_REJECTION, () => { if (state.local.raisedHand) toggleRaiseHand(); });
         if (C.PROPERTIES_CHANGED) on(C.PROPERTIES_CHANGED, properties => {
@@ -3640,6 +3917,8 @@
         $('poll-create').addEventListener('click', openPollCreate);
         $('insecure-label').addEventListener('click', event => { event.stopPropagation(); showExpandedLabel('insecure'); });
         $('audio-only-label').addEventListener('click', event => { event.stopPropagation(); showExpandedLabel('audio-only'); });
+        $('live-label').addEventListener('click', event => { event.stopPropagation(); showExpandedLabel('live'); });
+        $('stream-start').addEventListener('click', startLiveStream);
         $('expanded-label').addEventListener('click', event => { if (event.target.tagName !== 'A') $('expanded-label').hidden = true; });
         document.addEventListener('click', event => {
             const target = event.target.closest('[data-action]');
