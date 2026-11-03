@@ -1,6 +1,6 @@
 TARGET = ru.vkr.JitsiAuroraPrototype
 
-QT += network
+QT += network dbus
 
 CONFIG += \
     auroraapp
@@ -26,11 +26,15 @@ contains(QT_ARCH, x86_64) {
 SOURCES += \
     src/main.cpp \
     src/appstate.cpp \
+    src/callcontrol.cpp \
+    src/containerloginstore.cpp \
     src/screencapture.cpp
 
 HEADERS += \
     src/appstate.h \
+    src/callcontrol.h \
     src/clienttranslator.h \
+    src/containerloginstore.h \
     src/screencapture.h
 
 DISTFILES += \

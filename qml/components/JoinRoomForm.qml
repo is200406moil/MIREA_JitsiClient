@@ -23,6 +23,9 @@ Column {
     function blur() { room.blurEditor() }
 
     function submit() {
+        // The field would get the focus back, with the keyboard, when the
+        // meeting pages are closed.
+        room.blurEditor()
         form.submitted(room.text.trim() || form.generatedRoomName)
     }
 

@@ -1,6 +1,7 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
 import Sailfish.Share 1.0
+import Nemo.KeepAlive 1.2
 import ru.auroraos.WebView 1.0
 import ru.auroraos.WebView.Global 1.0
 import "../components"
@@ -24,6 +25,11 @@ Page {
     property var moderation: null
     // The moderator muted the reaction sounds for everyone.
     property bool reactionsMuted: false
+    // From the call page: the microphone and the meeting start, shown on the
+    // application cover and controlled from it and from the notification.
+    property bool callAudioMuted: initialAudioMuted
+    property bool callCanUnmute: true
+    property double callStartedAt: 0
     property string inviteLink: page.serverAddress.replace(/\/$/, "") + "/" + encodeURIComponent(page.roomName)
 
     ShareAction {
@@ -36,8 +42,59 @@ Page {
     function close() {
         if (leaving) return
         leaving = true
+        if (__silica_applicationwindow_instance.activeMeeting === page)
+            __silica_applicationwindow_instance.activeMeeting = null
+        removeNotifications()
         if (page.returnPage) pageStack.pop(page.returnPage)
         else pageStack.pop()
+    }
+
+    // The meeting goes on with the screen locked or the application in the
+    // background: the system is kept from suspending while the page exists,
+    // and an ongoing notification (CallControl) stays in the notification
+    // area until the meeting ends. Tapping it brings the meeting back, its
+    // buttons switch the microphone and leave.
+    KeepAlive {
+        enabled: !page.leaving
+    }
+
+    Connections {
+        target: callControl
+        onActivateRequested: __silica_applicationwindow_instance.activate()
+        onToggleAudioRequested: page.toggleAudio()
+        onHangupRequested: page.hangup()
+    }
+
+    Component.onCompleted: {
+        __silica_applicationwindow_instance.activeMeeting = page
+        callControl.showNotification(appState.t("calendarSync.ongoingMeeting"), notificationBody(),
+                                     notificationMuteLabel(), appState.t("toolbar.hangup"))
+    }
+
+    // AudioMuteButton of the mobile client: "Unmute microphone" while muted,
+    // "Mute microphone" otherwise; the text under the room also says the
+    // microphone is off.
+    function notificationMuteLabel() {
+        return appState.t(page.callAudioMuted ? "toolbar.unmute" : "toolbar.mute")
+    }
+
+    function notificationBody() {
+        return page.callAudioMuted ? page.roomName + "
+" + appState.t("videothumbnail.muted") : page.roomName
+    }
+
+    onCallAudioMutedChanged: if (!page.leaving) callControl.updateNotification(notificationBody(), notificationMuteLabel())
+
+    function removeNotifications() {
+        callControl.hideNotification()
+    }
+
+    function toggleAudio() {
+        if (callCanUnmute) callJs("window.auroraCall.toggleAudio()")
+    }
+
+    function hangup() {
+        callJs("window.auroraCall.hangup()")
     }
 
     function callJs(code) {
@@ -45,6 +102,10 @@ Page {
     }
 
     Component.onDestruction: {
+        if (__silica_applicationwindow_instance.activeMeeting === page)
+            __silica_applicationwindow_instance.activeMeeting = null
+        leaving = true
+        removeNotifications()
         appState.finishMeeting()
         if (previousPage) previousPage.resetPreview()
     }
@@ -100,6 +161,11 @@ Page {
             case "openSettings":
                 page.moderation = data.moderation || null
                 pageStack.push(Qt.resolvedUrl("MeetingSettingsPage.qml"), {title: data.title, roomPage: page})
+                break
+            case "callState":
+                page.callAudioMuted = !!data.audioMuted
+                page.callCanUnmute = !!data.canUnmute
+                page.callStartedAt = data.startedAt || 0
                 break
             case "moderation":
                 page.moderation = data.state || null

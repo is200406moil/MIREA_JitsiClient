@@ -6,6 +6,8 @@ ApplicationWindow {
     initialPage: Qt.resolvedUrl("pages/MainPage.qml")
     cover: Qt.resolvedUrl("cover/DefaultCoverPage.qml")
     allowedOrientations: defaultAllowedOrientations
+    // The meeting page while a meeting is on (the cover shows it).
+    property var activeMeeting: null
     Connections {
         target: appState
         onInterfaceLanguageChanged: languageRefresh.restart()

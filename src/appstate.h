@@ -19,6 +19,16 @@ public:
     virtual QByteArray frame(quint64 *serial) const = 0;
 };
 
+// Saved logins and organizer tokens per server host (CredentialStore over
+// the system secure storage in the application; none in the unit tests).
+class LoginStore
+{
+public:
+    virtual ~LoginStore() = default;
+    virtual QVariantMap load(const QString &host) = 0;
+    virtual void update(const QString &host, const QVariantMap &fields) = 0;
+};
+
 class AppState : public QObject
 {
     Q_OBJECT
@@ -37,6 +47,7 @@ class AppState : public QObject
 public:
     explicit AppState(QObject *parent = nullptr, const QString &settingsFile = QString());
     void setScreenFrameSource(ScreenFrameSource *source) { m_screen = source; }
+    void setLoginStore(LoginStore *store) { m_logins = store; }
     QString displayName() const;
     QString email() const;
     QString avatarUrl() const;
@@ -64,6 +75,8 @@ public:
     // Jitsi Meet strings (qml/call/lang), the same files the call screen uses.
     Q_INVOKABLE QString t(const QString &key, const QVariantMap &params = QVariantMap()) const;
     Q_INVOKABLE QString roomDate(qint64 timestamp) const;
+    // The meeting timer of the call page: mm:ss, h:mm:ss after an hour.
+    Q_INVOKABLE QString formatDuration(double milliseconds) const;
     Q_INVOKABLE void copyText(const QString &text);
 
 signals:
@@ -87,12 +100,11 @@ private:
     QSettings *m_settings;
     QTcpServer m_http;
     ScreenFrameSource *m_screen = nullptr;
+    LoginStore *m_logins = nullptr;
     QVariantList m_rooms;
     QVariantMap m_activeRoom;
     qint64 m_meetingStarted = 0;
     QByteArray m_meetingHtml;
-    // Organizer tokens per server host, kept for the lifetime of the app.
-    QHash<QString, QString> m_tokens;
     QString m_route;
     QString m_meetingUrl;
     QString m_meetingOrigin;

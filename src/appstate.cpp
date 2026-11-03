@@ -273,6 +273,15 @@ QString AppState::initials(const QString &name) const
     return result.toUpper();
 }
 
+QString AppState::formatDuration(double milliseconds) const
+{
+    const qint64 total = qMax<qint64>(0, qint64(milliseconds / 1000));
+    const qint64 hours = total / 3600;
+    const QString minutesSeconds = QStringLiteral("%1:%2")
+        .arg((total / 60) % 60, 2, 10, QLatin1Char('0')).arg(total % 60, 2, 10, QLatin1Char('0'));
+    return hours ? QString::number(hours) + QLatin1Char(':') + minutesSeconds : minutesSeconds;
+}
+
 QString AppState::roomDate(qint64 timestamp) const
 {
     if (!timestamp) return QString();
@@ -338,7 +347,16 @@ bool AppState::startMeeting(const QVariantMap &room, bool muteAudio, bool muteVi
     config["videoMuted"] = muteVideo;
     config["audioOnly"] = audioOnly;
     config["language"] = preferences().value("language").toString();
-    config["jwt"] = m_tokens.value(QUrl(address).host());
+    // The login and the organizer token saved for this server: the meeting
+    // signs in with them instead of asking again.
+    const QVariantMap saved = m_logins ? m_logins->load(QUrl(address).host()) : QVariantMap();
+    config["jwt"] = saved.value("jwt").toString();
+    if (!saved.value("username").toString().isEmpty()) {
+        QJsonObject login;
+        login["username"] = saved.value("username").toString();
+        login["password"] = saved.value("password").toString();
+        config["savedLogin"] = login;
+    }
     config["insecureRoomName"] = roomName.trimmed().size() <= 8;
     config["inviteUrl"] = address + "/" + QString::fromLatin1(QUrl::toPercentEncoding(roomName));
     config["securityHelpUrl"] = QStringLiteral("https://jitsi.github.io/handbook/docs/faq/#how-can-i-protect-my-meetings-with-jitsi");
@@ -475,7 +493,13 @@ void AppState::handleRequest(QTcpSocket *socket)
         const QString name = event.value("name").toString();
         const QVariantMap data = event.value("data").toObject().toVariantMap();
         if (name == "joined") markJoined();
-        if (name == "token") m_tokens.insert(QUrl(m_activeRoom.value("server").toString()).host(), data.value("jwt").toString());
+        const QString host = QUrl(m_activeRoom.value("server").toString()).host();
+        if (name == "token" && m_logins) m_logins->update(host, {{"jwt", data.value("jwt").toString()}});
+        // A login the server accepted is saved; one it refused is forgotten.
+        if (name == "credentials" && m_logins) {
+            m_logins->update(host, {{"username", data.value("username").toString()},
+                                    {"password", data.value("password").toString()}});
+        }
         if (name == "log") appendCallLog(data.value("message").toString());
         if (name == "screenShare" && m_screen) {
             if (data.value("active").toBool()) m_screen->start();

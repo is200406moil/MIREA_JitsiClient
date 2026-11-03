@@ -1,7 +1,7 @@
 Name:       ru.vkr.JitsiAuroraPrototype
 Summary:    Клиент видеоконференций Jitsi Meet для Авроры
 Version:    0.1
-Release:    97
+Release:    119
 License:    BSD-3-Clause
 URL:        https://auroraos.ru
 Source0:    %{name}-%{version}.tar.bz2
@@ -13,6 +13,7 @@ Source0:    %{name}-%{version}.tar.bz2
 
 Requires:   sailfishsilica-qt5 >= 0.10.9
 Requires:   qt5-qtmultimedia
+Requires:   libkeepalive
 Requires:   qt5-qtdeclarative-import-multimedia
 Requires:   qt5-qtmultimedia-plugin-mediaservice-gstmediacapture
 BuildRequires:  pkgconfig(auroraapp)

@@ -235,6 +235,9 @@
         roomPassword: '',
         // XMPP login of servers with username/password authentication.
         credentials: null,
+        // The login saved for this server (AppState, secure storage): used
+        // once for the first connection instead of asking again.
+        savedLogin: cfg.savedLogin || null,
         upgradeProcess: null,
         waitForOwnerTimer: 0,
         screen: '',
@@ -273,8 +276,25 @@
     // ------------------------------------------------------------- rendering
 
     let renderQueued = false;
+    let reportedCallState = '';
+
+    // The application cover and the meeting notification show the microphone
+    // and the meeting time. Sent outside requestAnimationFrame, which does not
+    // run while the application is in the background.
+    function reportCallState() {
+        const callState = {
+            audioMuted: !!state.audioMuted,
+            canUnmute: !state.iAmVisitor,
+            startedAt: state.startedAt || 0
+        };
+        const text = JSON.stringify(callState);
+        if (text === reportedCallState) return;
+        reportedCallState = text;
+        notify('callState', callState);
+    }
 
     function render() {
+        reportCallState();
         if (renderQueued) return;
         renderQueued = true;
         requestAnimationFrame(() => {
@@ -3295,12 +3315,32 @@
 
     function hideConnecting() { $('connecting').hidden = true; }
 
+    // Credentials the server accepted are saved for the next meetings;
+    // saved: true marks those already in the secure storage.
+    function rememberCredentials() {
+        const credentials = state.credentials;
+        if (!credentials || credentials.saved) return;
+        credentials.saved = true;
+        notify('credentials', { username: credentials.username, password: credentials.password });
+    }
+
+    function forgetCredentials() {
+        notify('credentials', { username: '', password: '' });
+    }
+
     function connect() {
         const E = JitsiMeetJS.events.connection;
+        if (!state.credentials && state.savedLogin && !state.iAmVisitor) {
+            const login = state.savedLogin;
+            state.savedLogin = null;
+            state.credentials = { id: toJid(login.username), username: login.username, password: login.password, saved: true };
+        }
         const connection = new JitsiMeetJS.JitsiConnection(null, state.jwt || null, connectionOptions());
         state.connection = connection;
         connection.addEventListener(E.CONNECTION_ESTABLISHED, () => {
-            if (state.connection === connection) joinConference();
+            if (state.connection !== connection) return;
+            if (state.credentials && !state.iAmVisitor) rememberCredentials();
+            joinConference();
         });
         connection.addEventListener(E.CONNECTION_FAILED, (error, message, credentials, details) => {
             if (state.connection !== connection || state.leaving) return;
@@ -3312,8 +3352,10 @@
                 state.connection = null;
                 hideConnecting();
                 if (state.credentials) {
-                    // LoginDialog: the credentials the user typed were refused.
+                    // LoginDialog: the credentials the user typed were refused;
+                    // refused saved ones are removed from the storage.
                     const username = state.credentials.username;
+                    if (state.credentials.saved) forgetCredentials();
                     state.credentials = null;
                     loginDialog({ username, message: t('dialog.incorrectPassword') });
                 } else if (state.jwt) {
@@ -3772,6 +3814,7 @@
                     if (state.upgradeProcess !== process) return;
                     state.upgradeProcess = null;
                     state.credentials = { id, username: name, password: password.value };
+                    rememberCredentials();
                     if (dialog.dataset.kind === 'login') closeDialog();
                 }, error => {
                     if (state.upgradeProcess !== process) return;
@@ -4009,6 +4052,7 @@
         setToken,
         setModeration,
         hangup: () => leave('hangup'),
+        toggleAudio: () => { if (!state.iAmVisitor) toggleAudio(); },
         whiteboardClosed: () => { state.whiteboardOpen = false; },
         back: () => {
             if (!$('dialog').hidden) { closeDialog(); return true; }

@@ -29,22 +29,22 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/appstate.cpp" line="303"/>
+        <location filename="../src/appstate.cpp" line="312"/>
         <source>Вчера, </source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/appstate.cpp" line="311"/>
+        <location filename="../src/appstate.cpp" line="320"/>
         <source>Не удалось определить адрес комнаты.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/appstate.cpp" line="314"/>
+        <location filename="../src/appstate.cpp" line="323"/>
         <source>Не удалось подготовить встречу. Перезапустите приложение.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../src/appstate.cpp" line="317"/>
+        <location filename="../src/appstate.cpp" line="326"/>
         <source>Не удалось загрузить экран встречи.</source>
         <translation type="unfinished"></translation>
     </message>
