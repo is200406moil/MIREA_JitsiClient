@@ -1,6 +1,7 @@
 #include "callcontrol.h"
 
 #include <QDBusConnection>
+#include <QDBusArgument>
 #include <QDBusMessage>
 #include <QDir>
 #include <QFile>
@@ -16,6 +17,9 @@ const QString Path = QStringLiteral("/call");
 const QString Interface = QStringLiteral("ru.vkr.JitsiAuroraPrototype.Call");
 const QString NotificationsService = QStringLiteral("org.freedesktop.Notifications");
 const QString NotificationsPath = QStringLiteral("/org/freedesktop/Notifications");
+// The notification lives this long unless renewed while the meeting is on.
+const int ExpireMs = 60000;
+const int RenewMs = 20000;
 
 QString idFile()
 {
@@ -33,6 +37,8 @@ QString remoteAction(const QString &method)
 CallControl::CallControl(QObject *parent)
     : QObject(parent)
 {
+    m_renew.setInterval(RenewMs);
+    connect(&m_renew, &QTimer::timeout, this, &CallControl::publish);
 }
 
 bool CallControl::registerOnBus()
@@ -45,6 +51,7 @@ bool CallControl::registerOnBus()
         if (stale) closeNotification(stale);
         previous.remove();
     }
+    closeLeftovers();
     bus.connect(NotificationsService, NotificationsPath, NotificationsService, QStringLiteral("NotificationClosed"),
                 this, SLOT(onNotificationClosed(uint,uint)));
     // Notification actions may call only the application's own name, which
@@ -61,7 +68,9 @@ void CallControl::showNotification(const QString &summary, const QString &body,
     m_muteLabel = muteLabel;
     m_hangupLabel = hangupLabel;
     m_shown = true;
+    m_since = QDateTime::currentDateTime();
     publish();
+    m_renew.start();
 }
 
 void CallControl::updateNotification(const QString &body, const QString &muteLabel)
@@ -75,6 +84,7 @@ void CallControl::updateNotification(const QString &body, const QString &muteLab
 void CallControl::hideNotification()
 {
     m_shown = false;
+    m_renew.stop();
     if (!m_id) return;
     closeNotification(m_id);
     m_id = 0;
@@ -87,6 +97,30 @@ void CallControl::closeNotification(uint id)
                                                           NotificationsService, QStringLiteral("CloseNotification"));
     message << id;
     QDBusConnection::sessionBus().call(message, QDBus::NoBlock);
+}
+
+void CallControl::closeLeftovers()
+{
+    QDBusMessage message = QDBusMessage::createMethodCall(NotificationsService, NotificationsPath,
+                                                          NotificationsService, QStringLiteral("GetNotifications"));
+    message << QString();
+    const QDBusMessage reply = QDBusConnection::sessionBus().call(message);
+    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty()) return;
+    // a(susssasa{sv}i): app name, id, icon, summary, body, actions, hints, timeout
+    const QDBusArgument list = reply.arguments().first().value<QDBusArgument>();
+    list.beginArray();
+    while (!list.atEnd()) {
+        QString appName, icon, summary, body;
+        uint id = 0;
+        QStringList actions;
+        QVariantMap hints;
+        int timeout = 0;
+        list.beginStructure();
+        list >> appName >> id >> icon >> summary >> body >> actions >> hints >> timeout;
+        list.endStructure();
+        if (icon == Service && actions.contains(QStringLiteral("hangup"))) closeNotification(id);
+    }
+    list.endArray();
 }
 
 void CallControl::rememberId(uint id)
@@ -114,6 +148,8 @@ void CallControl::publish()
     hints.insert(QStringLiteral("x-nemo-user-removable"), false);
     hints.insert(QStringLiteral("resident"), true);
     hints.insert(QStringLiteral("suppress-sound"), true);
+    // The time shown is the start of the meeting, not of the last renewal.
+    hints.insert(QStringLiteral("x-nemo-timestamp"), m_since.toString(Qt::ISODate));
     hints.insert(QStringLiteral("x-nemo-remote-action-default"), remoteAction(QStringLiteral("activate")));
     hints.insert(QStringLiteral("x-nemo-remote-action-mute"), remoteAction(QStringLiteral("toggleAudio")));
     hints.insert(QStringLiteral("x-nemo-remote-action-hangup"), remoteAction(QStringLiteral("hangup")));
@@ -126,7 +162,7 @@ void CallControl::publish()
     // An existing notification is updated in place; a removed one is replaced
     // by a new one.
     message << QStringLiteral("Jitsi Meet") << m_id << QStringLiteral("ru.vkr.JitsiAuroraPrototype")
-            << m_summary << m_body << actions << hints << int(-1);
+            << m_summary << m_body << actions << hints << ExpireMs;
     const QDBusMessage reply = QDBusConnection::sessionBus().call(message);
     const uint id = reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty()
         ? reply.arguments().first().toUInt() : 0;

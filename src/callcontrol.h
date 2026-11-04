@@ -1,8 +1,10 @@
 #ifndef CALLCONTROL_H
 #define CALLCONTROL_H
 
+#include <QDateTime>
 #include <QObject>
 #include <QString>
+#include <QTimer>
 
 // The ongoing meeting notification and its actions. The notification is
 // published on the freedesktop notifications service with the Nemo remote
@@ -18,8 +20,8 @@ public:
     // Registers the object; false when the bus refused it.
     bool registerOnBus();
 
-    // Shows the notification until hideNotification(); the system removes a
-    // tapped or cleared notification, so it is published again meanwhile.
+    // Shows the notification until hideNotification(). It is renewed while
+    // shown and expires a minute after the application stops renewing it.
     Q_INVOKABLE void showNotification(const QString &summary, const QString &body,
                                       const QString &muteLabel, const QString &hangupLabel);
     Q_INVOKABLE void hideNotification();
@@ -46,9 +48,16 @@ private:
     // The id of the shown notification, kept on disk: it cannot be cleared
     // by the user, so one left by a crashed run is closed on the next start.
     void rememberId(uint id);
+    // Closes notifications of this application left from an earlier run,
+    // also those the shell restored after a restart under new ids.
+    void closeLeftovers();
 
     bool m_shown = false;
     uint m_id = 0;
+    // The notification expires unless renewed: it cannot be removed by the
+    // user, so it must go away by itself when the application is gone.
+    QTimer m_renew;
+    QDateTime m_since;
     QString m_summary;
     QString m_body;
     QString m_muteLabel;
