@@ -1,6 +1,7 @@
 #include "../src/appstate.h"
 #include <QCoreApplication>
 #include <QTemporaryDir>
+#include <QSettings>
 #include <QDebug>
 #include <cstdio>
 #include <cstdlib>
@@ -62,8 +63,38 @@ int main(int argc, char **argv)
     require(reloaded.rooms().size() == 3 && reloaded.audioMuted() && !reloaded.videoMuted(), "settings survive restart");
     reloaded.removeRoom(linked.value("id").toString());
     require(reloaded.rooms().size() == 2, "remove targets only selected room");
+    const QVariantMap kept = reloaded.saveRoom("Без встреч");
+    AppState reloadedAgain(nullptr, settingsFile);
+    require(reloadedAgain.rooms().first().toMap().value("id") == kept.value("id"), "newest unused room comes first after restart");
+    require(!reloadedAgain.rooms().first().toMap().contains("duration"), "a room without meetings has no duration");
+
+    // Data of the versions that kept everything in QSettings.
+    const QString oldFile = dir.path() + "/old.ini";
+    {
+        QSettings old(oldFile, QSettings::IniFormat);
+        old.setValue("client/name", "Старое имя");
+        old.setValue("client/hideSelfView", true);
+        old.setValue("client/soundMessage", false);
+        old.setValue("client/rooms", QByteArray("[{\"id\":\"new\",\"name\":\"Новая\",\"server\":\"https://meet.jit.si\",\"lastUsed\":0},"
+                                               "{\"id\":\"used\",\"name\":\"Была\",\"server\":\"https://meet.jit.si\",\"lastUsed\":100,\"duration\":61}]"));
+        old.setValue("desktop/other", 1);
+    }
+    {
+        AppState moved(nullptr, oldFile);
+        require(moved.displayName() == "Старое имя", "old profile moved");
+        require(moved.preferences().value("hideSelfView").toBool() && !moved.preferences().value("soundMessage").toBool(), "old preferences moved");
+        require(moved.rooms().size() == 2 && moved.rooms().first().toMap().value("id") == "used", "old rooms moved and sorted");
+        require(moved.rooms().first().toMap().value("duration").toInt() == 61, "old duration moved");
+        require(moved.setPreference("hideSelfView", false), "preference after the move");
+    }
+    {
+        QSettings old(oldFile, QSettings::IniFormat);
+        require(!old.contains("client/name") && old.contains("desktop/other"), "only the moved group is removed");
+        AppState again(nullptr, oldFile);
+        require(!again.preferences().value("hideSelfView").toBool() && again.rooms().size() == 2, "the move happens once");
+    }
     require(state.initials("Алексей Иванов") == "АИ", "Cyrillic initials");
     require(!state.isTrustedOrigin("https://meet.example.org.evil.org"), "no media trust outside active session");
-    qInfo() << "PASS: profile, Gravatar hash, default server, validation, rooms, links, migration, persistence, initials";
+    qInfo() << "PASS: profile, Gravatar hash, default server, validation, rooms, links, migration, persistence, database, initials";
     return 0;
 }

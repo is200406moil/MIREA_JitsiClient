@@ -1,9 +1,9 @@
 TEMPLATE = app
 TARGET = jitsi-core-test
-QT = core gui network
+QT = core gui network sql
 CONFIG += console c++11
 CONFIG -= app_bundle
 PKGCONFIG += auroraapp
 CONFIG += link_pkgconfig
-SOURCES += core-test.cpp ../src/appstate.cpp
-HEADERS += ../src/appstate.h
+SOURCES += core-test.cpp ../src/appstate.cpp ../src/storage.cpp
+HEADERS += ../src/appstate.h ../src/storage.h

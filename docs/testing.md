@@ -29,10 +29,10 @@
 
 ## Модульные тесты
 
-`tests/core-test.cpp` — логика `AppState` (комнаты, настройки, адреса). Сборка в build shell SDK:
+`tests/core-test.cpp` — логика `AppState` и `Storage` (комнаты, настройки, адреса, сохранение после перезапуска, перенос данных из `QSettings`). Сборка в build shell SDK, запуск на эмуляторе или устройстве, успех — код возврата 0:
 
 ```bash
-cd tests && qmake core-test.pro && make && ./jitsi-core-test
+mkdir -p tests/.build && cd tests/.build && qmake ../core-test.pro && make
 ```
 
 Остальные программы в `tests/` — диагностика камеры и захвата экрана на эмуляторе или устройстве (`streamcamera-probe`, `screengrab-probe`, `gst-camera-probe` и др.).

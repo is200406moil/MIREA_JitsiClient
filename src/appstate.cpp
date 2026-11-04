@@ -11,6 +11,7 @@
 #include <QJsonObject>
 #include <QLocale>
 #include <QRegularExpression>
+#include <QSettings>
 #include <QStandardPaths>
 #include <QTcpSocket>
 #include <QTimer>
@@ -21,23 +22,28 @@
 
 AppState::AppState(QObject *parent, const QString &settingsFile) : QObject(parent)
 {
-    m_settings = settingsFile.isEmpty()
-        ? new QSettings(this)
-        : new QSettings(settingsFile, QSettings::IniFormat, this);
-    m_rooms = QJsonDocument::fromJson(m_settings->value("client/rooms").toByteArray()).array().toVariantList();
+    // settingsFile is the old QSettings data of the unit tests; the database lies beside it.
+    QSettings legacy;
+    QSettings testLegacy(settingsFile, QSettings::IniFormat);
+    const QString database = settingsFile.isEmpty()
+        ? QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/jitsi.db"
+        : settingsFile + ".db";
+    if (!m_store.open(database, settingsFile.isEmpty() ? &legacy : &testLegacy))
+        appendCallLog("database is not available: " + m_store.error());
+    m_rooms = m_store.rooms();
     connect(&m_http, &QTcpServer::newConnection, this, &AppState::acceptConnection);
     loadStrings();
 }
 
-QString AppState::displayName() const { return m_settings->value("client/name").toString(); }
-QString AppState::email() const { return m_settings->value("client/email").toString(); }
+QString AppState::displayName() const { return m_store.value("name").toString(); }
+QString AppState::email() const { return m_store.value("email").toString(); }
 QString AppState::server() const
 {
-    const QString saved = m_settings->value("client/server").toString();
+    const QString saved = m_store.value("server").toString();
     return saved == "https://meet.jit.si" ? QString() : saved;
 }
-bool AppState::audioMuted() const { return m_settings->value("client/audioMuted", false).toBool(); }
-bool AppState::videoMuted() const { return m_settings->value("client/videoMuted", false).toBool(); }
+bool AppState::audioMuted() const { return m_store.value("audioMuted", false).toBool(); }
+bool AppState::videoMuted() const { return m_store.value("videoMuted", false).toBool(); }
 
 QVariantMap AppState::preferences() const
 {
@@ -46,11 +52,11 @@ QVariantMap AppState::preferences() const
                                         "disableCrashReporting" };
     const QStringList trueDefaults = { "soundReactions", "soundMessage", "soundJoined", "soundLeft",
                                       "soundTalkMuted", "soundLobby", "chatNotifications" };
-    for (const QString &key : falseDefaults) values[key] = m_settings->value("client/" + key, false).toBool();
-    for (const QString &key : trueDefaults) values[key] = m_settings->value("client/" + key, true).toBool();
-    values["language"] = m_settings->value("client/language", "ru").toString();
+    for (const QString &key : falseDefaults) values[key] = m_store.value(key, false).toBool();
+    for (const QString &key : trueDefaults) values[key] = m_store.value(key, true).toBool();
+    values["language"] = m_store.value("language", "ru").toString();
     // The YouTube or RTMP stream key, kept like jitsi-meet's setLiveStreamKey.
-    values["liveStreamKey"] = m_settings->value("client/liveStreamKey").toString();
+    values["liveStreamKey"] = m_store.value("liveStreamKey").toString();
     return values;
 }
 
@@ -60,16 +66,15 @@ bool AppState::setPreference(const QString &key, const QVariant &value)
     if (!current.contains(key)) return false;
     if (key == "language") {
         if (value.toString() != "ru" && value.toString() != "en") return false;
-        m_settings->setValue("client/" + key, value.toString());
+        m_store.setValue(key, value.toString());
     } else if (key == "liveStreamKey") {
         const QString text = value.toString().trimmed();
         if (text.size() > 1024) return false;
-        m_settings->setValue("client/" + key, text);
+        m_store.setValue(key, text);
     } else {
         if (value.type() != QVariant::Bool) return false;
-        m_settings->setValue("client/" + key, value.toBool());
+        m_store.setValue(key, value.toBool());
     }
-    m_settings->sync();
     emit settingsChanged();
     if (key == "language" && current.value(key) != value) {
         loadStrings();
@@ -133,9 +138,8 @@ bool AppState::saveProfile(const QString &name, const QString &mail)
         setError(tr("Проверьте адрес электронной почты."));
         return false;
     }
-    m_settings->setValue("client/name", name.trimmed().left(100));
-    m_settings->setValue("client/email", cleanedMail);
-    m_settings->sync();
+    m_store.setValue("name", name.trimmed().left(100));
+    m_store.setValue("email", cleanedMail);
     setError(QString());
     emit profileChanged();
     return true;
@@ -148,11 +152,10 @@ bool AppState::saveSettings(const QString &address, bool muteAudio, bool muteVid
         setError(tr("Проверьте адрес сервера."));
         return false;
     }
-    if (normalized.isEmpty() || normalized == "https://meet.jit.si") m_settings->remove("client/server");
-    else m_settings->setValue("client/server", normalized);
-    m_settings->setValue("client/audioMuted", muteAudio);
-    m_settings->setValue("client/videoMuted", muteVideo);
-    m_settings->sync();
+    if (normalized.isEmpty() || normalized == "https://meet.jit.si") m_store.remove("server");
+    else m_store.setValue("server", normalized);
+    m_store.setValue("audioMuted", muteAudio);
+    m_store.setValue("videoMuted", muteVideo);
     setError(QString());
     emit settingsChanged();
     return true;
@@ -194,16 +197,15 @@ QVariantMap AppState::saveRoom(const QString &input, bool remember)
     room["lastUsed"] = qint64(0);
     if (remember) {
         m_rooms.prepend(room);
-        storeRooms();
+        storeRoom(room);
     }
     setError(QString());
     return room;
 }
 
-void AppState::storeRooms()
+void AppState::storeRoom(const QVariantMap &room)
 {
-    m_settings->setValue("client/rooms", QJsonDocument(QJsonArray::fromVariantList(m_rooms)).toJson(QJsonDocument::Compact));
-    m_settings->sync();
+    m_store.saveRoom(room);
     emit roomsChanged();
 }
 
@@ -212,7 +214,8 @@ void AppState::removeRoom(const QString &id)
     for (int i = 0; i < m_rooms.size(); ++i) {
         if (m_rooms.at(i).toMap().value("id").toString() == id) {
             m_rooms.removeAt(i);
-            storeRooms();
+            m_store.removeRoom(id);
+            emit roomsChanged();
             return;
         }
     }
@@ -220,13 +223,12 @@ void AppState::removeRoom(const QString &id)
 
 void AppState::importLegacy(const QString &json, const QString &name)
 {
-    if (m_settings->value("client/migrated", false).toBool()) return;
-    if (displayName().isEmpty() && !name.trimmed().isEmpty()) m_settings->setValue("client/name", name.trimmed());
+    if (m_store.value("migrated", false).toBool()) return;
+    if (displayName().isEmpty() && !name.trimmed().isEmpty()) m_store.setValue("name", name.trimmed());
     for (const QJsonValue &entry : QJsonDocument::fromJson(json.toUtf8()).array()) {
         if (entry.isString()) saveRoom(entry.toString());
     }
-    m_settings->setValue("client/migrated", true);
-    m_settings->sync();
+    m_store.setValue("migrated", true);
     emit profileChanged();
 }
 
@@ -329,7 +331,7 @@ bool AppState::startMeeting(const QVariantMap &room, bool muteAudio, bool muteVi
     for (const QVariant &entry : m_rooms) {
         if (entry.toMap().value("id") == room.value("id")) { remembered = true; break; }
     }
-    if (!remembered) { m_rooms.prepend(room); storeRooms(); }
+    if (!remembered) { m_rooms.prepend(room); storeRoom(room); }
     m_meetingStarted = QDateTime::currentMSecsSinceEpoch();
     // The call page runs on the loopback server; camera and microphone
     // requests are accepted only from this origin.
@@ -392,7 +394,7 @@ void AppState::finishMeeting()
                 room["lastUsed"] = m_meetingStarted;
                 room["duration"] = (QDateTime::currentMSecsSinceEpoch() - m_meetingStarted) / 1000;
                 m_rooms[i] = room;
-                storeRooms();
+                storeRoom(room);
                 break;
             }
         }
@@ -413,7 +415,7 @@ void AppState::markJoined()
         if (room.value("id") == m_activeRoom.value("id")) {
             room["lastUsed"] = QDateTime::currentMSecsSinceEpoch();
             m_rooms[i] = room;
-            storeRooms();
+            storeRoom(room);
             break;
         }
     }

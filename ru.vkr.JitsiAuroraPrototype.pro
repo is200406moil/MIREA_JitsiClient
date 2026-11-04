@@ -1,6 +1,6 @@
 TARGET = ru.vkr.JitsiAuroraPrototype
 
-QT += network dbus
+QT += network dbus sql
 
 CONFIG += \
     auroraapp
@@ -28,14 +28,16 @@ SOURCES += \
     src/appstate.cpp \
     src/callcontrol.cpp \
     src/containerloginstore.cpp \
-    src/screencapture.cpp
+    src/screencapture.cpp \
+    src/storage.cpp
 
 HEADERS += \
     src/appstate.h \
     src/callcontrol.h \
     src/clienttranslator.h \
     src/containerloginstore.h \
-    src/screencapture.h
+    src/screencapture.h \
+    src/storage.h
 
 DISTFILES += \
     rpm/ru.vkr.JitsiAuroraPrototype.spec \

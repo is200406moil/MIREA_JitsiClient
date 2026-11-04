@@ -3,9 +3,9 @@
 #include <QObject>
 #include <QHash>
 #include <QJsonObject>
-#include <QSettings>
 #include <QTcpServer>
 #include <QVariantList>
+#include "storage.h"
 
 // The source of screen sharing frames (ScreenCapture in the application;
 // the unit tests run without one).
@@ -91,13 +91,13 @@ signals:
 private:
     QString normalizedServer(const QString &input) const;
     void setError(const QString &message);
-    void storeRooms();
+    void storeRoom(const QVariantMap &room);
     void acceptConnection();
     void handleRequest(class QTcpSocket *socket);
     void sendResponse(class QTcpSocket *socket, int status, const QByteArray &type, const QByteArray &body);
     void markJoined();
 
-    QSettings *m_settings;
+    Storage m_store;
     QTcpServer m_http;
     ScreenFrameSource *m_screen = nullptr;
     LoginStore *m_logins = nullptr;

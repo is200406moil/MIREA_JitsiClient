@@ -54,6 +54,10 @@ Chromium получает камеру через StreamCamera, а камера 
 
 ## Хранение данных
 
-- Настройки, профиль и комнаты — `QSettings` (`~/.config/ru.vkr/JitsiAuroraPrototype/`).
+- Настройки, профиль и комнаты — база SQLite `~/.local/share/ru.vkr/JitsiAuroraPrototype/jitsi.db` (класс `Storage`, `src/storage.*`):
+  - таблица `settings` (`key`, `value`) — настройки и профиль;
+  - таблица `rooms` (`id`, `name`, `server`, `last_used`, `duration`) — комнаты; `id` — SHA-256 от адреса сервера и названия, `duration` пуст до конца первой встречи;
+  - версия схемы — `PRAGMA user_version`;
+  - данные прежних версий из `QSettings` переносятся при первом запуске одной транзакцией, после чего группа `client` удаляется.
 - Логины и токены — криптоконтейнер (см. выше).
 - Кэш WebView и журнал встречи — `~/.cache/ru.vkr/JitsiAuroraPrototype/`.
