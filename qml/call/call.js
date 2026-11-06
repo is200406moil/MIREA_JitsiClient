@@ -331,6 +331,23 @@
         node.style.boxShadow = `0 0 ${inner ? 2 : 0}px ${inner}px rgba(255, 255, 255, .4), 0 0 ${outer ? 6 : 0}px ${outer}px rgba(255, 255, 255, .2)`;
     }
 
+    // getParticipantCountWithFake: a shared video counts as a participant.
+    function participantCountWithFake() {
+        return state.remotes.size + 1 + (state.sharedVideo ? 1 : 0);
+    }
+
+    function filmstripVisible() {
+        return participantCountWithFake() > 1;
+    }
+
+    // shouldRemoteVideosBeVisible (native): in a one to one meeting the other
+    // participant is on the stage only, unless the local video is pinned.
+    function shouldRemoteVideosBeVisible() {
+        const count = participantCountWithFake();
+        const localPinned = !!state.pinnedId && state.pinnedId === state.local.id;
+        return count > 2 || (count > 1 && localPinned) || !!(state.serverConfig || {}).disable1On1Mode;
+    }
+
     function videoTrackOf(p) {
         const track = p && p.tracks.video;
         if (!track || track.isMuted()) return null;
@@ -463,8 +480,8 @@
             reconcile($('tiles'), [], 'tile', {});
             const videoOnStage = !!state.sharedVideo && !state.pinnedId;
             reconcile($('stage'), videoOnStage ? [] : [stageParticipant()], 'participant', { onClick: toggleToolbox });
-            const thumbs = state.remotes.size || state.sharedVideo ? [...state.remotes.values()] : [];
-            if (thumbs.length && showSelf) thumbs.push(state.local);
+            const thumbs = shouldRemoteVideosBeVisible() ? [...state.remotes.values()] : [];
+            if (filmstripVisible() && showSelf) thumbs.push(state.local);
             reconcile($('filmstrip'), thumbs, 'thumbnail participant', { indicators: true, menu: true, onClick: togglePin });
             $('filmstrip').hidden = !thumbs.length;
         }
@@ -628,7 +645,6 @@
     }
 
     function togglePin(id) {
-        if (id === state.localId || id === 'local') return;
         state.pinnedId = state.pinnedId === id ? '' : id;
         sendFollowMe();
         render();
