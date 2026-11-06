@@ -11,3 +11,4 @@ documentation.list
 /ru.vkr.JitsiAuroraPrototype
 /tests/jitsi-*
 *.qm
+*.moc
