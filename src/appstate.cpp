@@ -30,6 +30,9 @@ AppState::AppState(QObject *parent, const QString &settingsFile) : QObject(paren
         : settingsFile + ".db";
     if (!m_store.open(database, settingsFile.isEmpty() ? &legacy : &testLegacy))
         appendCallLog("database is not available: " + m_store.error());
+    // Earlier versions kept the stream key here in the open. It is not moved:
+    // it would not be known which server it may be given to.
+    if (m_store.value("liveStreamKey").isValid()) m_store.erase("liveStreamKey");
     m_rooms = m_store.rooms();
     connect(&m_http, &QTcpServer::newConnection, this, &AppState::acceptConnection);
     loadStrings();
@@ -55,8 +58,6 @@ QVariantMap AppState::preferences() const
     for (const QString &key : falseDefaults) values[key] = m_store.value(key, false).toBool();
     for (const QString &key : trueDefaults) values[key] = m_store.value(key, true).toBool();
     values["language"] = m_store.value("language", "ru").toString();
-    // The YouTube or RTMP stream key, kept like jitsi-meet's setLiveStreamKey.
-    values["liveStreamKey"] = m_store.value("liveStreamKey").toString();
     return values;
 }
 
@@ -67,10 +68,6 @@ bool AppState::setPreference(const QString &key, const QVariant &value)
     if (key == "language") {
         if (value.toString() != "ru" && value.toString() != "en") return false;
         m_store.setValue(key, value.toString());
-    } else if (key == "liveStreamKey") {
-        const QString text = value.toString().trimmed();
-        if (text.size() > 1024) return false;
-        m_store.setValue(key, text);
     } else {
         if (value.type() != QVariant::Bool) return false;
         m_store.setValue(key, value.toBool());
@@ -353,6 +350,8 @@ bool AppState::startMeeting(const QVariantMap &room, bool muteAudio, bool muteVi
     // signs in with them instead of asking again.
     const QVariantMap saved = m_logins ? m_logins->load(QUrl(address).host()) : QVariantMap();
     config["jwt"] = saved.value("jwt").toString();
+    // Only the key typed for this server: the page runs code of the server.
+    config["liveStreamKey"] = saved.value("liveStreamKey").toString();
     if (!saved.value("username").toString().isEmpty()) {
         QJsonObject login;
         login["username"] = saved.value("username").toString();
@@ -384,9 +383,32 @@ bool AppState::isTrustedOrigin(const QString &origin) const
         && candidate.userInfo().isEmpty();
 }
 
+QString AppState::screenShareTitle() const
+{
+    return tr("Показать экран?");
+}
+
+QString AppState::screenShareText() const
+{
+    return tr("Сервер %1 запрашивает показ экрана. Участники встречи увидят всё, что на нём происходит.")
+        .arg(QUrl(m_activeRoom.value("server").toString()).host());
+}
+
+void AppState::answerScreenShare(bool allow)
+{
+    if (m_screenShare != ScreenShareWaiting) return;
+    if (allow && m_screen) {
+        m_screenShare = ScreenShareAllowed;
+        m_screen->start();
+    } else {
+        m_screenShare = ScreenShareRefused;
+    }
+}
+
 void AppState::finishMeeting()
 {
     if (m_screen) m_screen->stop();
+    m_screenShare = ScreenShareNone;
     if (m_meetingStarted > 0) {
         for (int i = 0; i < m_rooms.size(); ++i) {
             QVariantMap room = m_rooms.at(i).toMap();
@@ -502,16 +524,27 @@ void AppState::handleRequest(QTcpSocket *socket)
             m_logins->update(host, {{"username", data.value("username").toString()},
                                     {"password", data.value("password").toString()}});
         }
+        if (name == "liveStreamKey" && m_logins && data.value("key").toString().size() <= 1024) {
+            m_logins->update(host, {{"liveStreamKey", data.value("key").toString().trimmed()}});
+        }
         if (name == "log") appendCallLog(data.value("message").toString());
         if (name == "screenShare" && m_screen) {
-            if (data.value("active").toBool()) m_screen->start();
-            else m_screen->stop();
+            if (!data.value("active").toBool()) {
+                m_screen->stop();
+                m_screenShare = ScreenShareNone;
+            } else if (m_screenShare != ScreenShareAllowed) {
+                m_screenShare = ScreenShareWaiting;
+            }
         }
         sendResponse(socket, 200, "application/json", "{}");
         emit conferenceEvent(name, data);
         return;
     }
     if (request[0] == "GET" && request[1].startsWith(route + "screen.jpg")) {
+        // No frames without the user's answer: 202 while the question is
+        // open, 403 otherwise.
+        if (m_screenShare == ScreenShareWaiting) { sendResponse(socket, 202, "text/plain", QByteArray()); return; }
+        if (m_screenShare != ScreenShareAllowed) { sendResponse(socket, 403, "text/plain", QByteArray()); return; }
         // The latest screen sharing frame: 204 while none arrived yet, 503
         // with the reason when the capture failed.
         const QString failure = m_screen ? m_screen->error() : QStringLiteral("Screen capture is not available");

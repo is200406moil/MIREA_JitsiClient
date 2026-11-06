@@ -1674,9 +1674,18 @@
         };
         nativeShare = { stop: () => { stopped = true; clearTimeout(nativeShare && nativeShare.timer); notify('screenShare', { active: false }); } };
         // The first frame sets the size of the shared picture.
-        const deadline = Date.now() + 8000;
+        let deadline = Date.now() + 8000;
         while (!drawn) {
             const response = await fetch(frameUrl, { cache: 'no-store' });
+            if (response.status === 403) {
+                nativeShare.stop();
+                nativeShare = null;
+                const refused = new Error('Screen sharing was refused');
+                refused.name = 'gum.permission_denied';
+                throw refused;
+            }
+            // The application is asking the user.
+            if (response.status === 202) deadline = Date.now() + 8000;
             if (response.status === 503) {
                 const reason = await response.text();
                 nativeShare.stop();
@@ -2272,7 +2281,7 @@
         const config = liveStreamingConfig();
         const input = $('stream-key');
         input.placeholder = t(config.streamKeyPlaceholderKey);
-        input.value = prefs.liveStreamKey || '';
+        input.value = cfg.liveStreamKey || '';
         const error = $('stream-key-error');
         const validate = () => !input.value.trim() || config.streamLinkRegexp.test(input.value.trim());
         error.textContent = t('liveStreaming.invalidStreamKey');
@@ -2293,8 +2302,8 @@
         const key = $('stream-key').value.trim();
         if (!key || !state.conference) return;
         if (!liveStreamingConfig().streamLinkRegexp.test(key)) { $('stream-key-error').hidden = false; return; }
-        prefs.liveStreamKey = key;
-        notify('preference', { key: 'liveStreamKey', value: key });
+        cfg.liveStreamKey = key;
+        notify('liveStreamKey', { key });
         closeScreen();
         state.liveStream = { status: 'pending', session: null };
         // showPendingRecordingNotification

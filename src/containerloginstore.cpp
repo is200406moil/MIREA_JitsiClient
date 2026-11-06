@@ -18,6 +18,8 @@ const QString SStoreService = QStringLiteral("ru.omprussia.sstore");
 const QString SStorePath = QStringLiteral("/ru/omprussia/sstore");
 const int SStoreSuccess = 0;
 const QString EntriesFile = QStringLiteral("logins.json");
+// Says that the container password comes from the key store.
+const QString StoreMarkFile = QStringLiteral("/container.keystore");
 
 bool replyIs(const QDBusMessage &reply, int count)
 {
@@ -63,6 +65,12 @@ QString ContainerLoginStore::fileKey(bool create)
     return out.commit() ? key : QString();
 }
 
+void ContainerLoginStore::markKeyInStore()
+{
+    QFile mark(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + StoreMarkFile);
+    if (!mark.exists() && mark.open(QIODevice::WriteOnly)) mark.close();
+}
+
 // The password to open or create the container with. The key store comes
 // first; a container of an earlier version moves to it from storage.key.
 QString ContainerLoginStore::chooseKey(bool exists)
@@ -71,9 +79,15 @@ QString ContainerLoginStore::chooseKey(bool exists)
     const QString stored = keystoreContainerPassword(&error);
     const QString legacy = fileKey(false);
     if (stored.isEmpty()) {
+        if (exists && legacy.isEmpty() && QFile::exists(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + StoreMarkFile)) {
+            m_storeFailed = true;
+            emit message(QStringLiteral("key store did not answer, the logins container stays closed: ") + error);
+            return QString();
+        }
         emit message(QStringLiteral("key store is not available, using the key file: ") + error);
         return fileKey(!exists);
     }
+    markKeyInStore();
     if (!exists) {
         if (!legacy.isEmpty()) QFile::remove(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/storage.key"));
         return stored;
@@ -85,6 +99,7 @@ QString ContainerLoginStore::chooseKey(bool exists)
         emit message(QStringLiteral("logins container moved to the key store"));
         return stored;
     }
+    QFile::remove(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + StoreMarkFile);
     emit message(QStringLiteral("logins container was not moved to the key store: ") + reply.errorMessage());
     return legacy;
 }
@@ -92,6 +107,7 @@ QString ContainerLoginStore::chooseKey(bool exists)
 bool ContainerLoginStore::open()
 {
     if (!m_path.isEmpty()) return true;
+    if (m_storeFailed) return false;
     if (!m_sstore->connection().interface()->isServiceRegistered(SStoreService).value()) {
         emit message(QStringLiteral("secure storage service is not available"));
         return false;
@@ -104,6 +120,7 @@ bool ContainerLoginStore::open()
     }
     bool exists = reply.arguments().at(0).toBool();
     const QString key = chooseKey(exists);
+    if (m_storeFailed) return false;
     if (exists && key.isEmpty()) {
         // No key opens it (the application data was cleared): the old
         // container cannot be opened any more, a new one replaces it.

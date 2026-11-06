@@ -12,11 +12,15 @@ MouseArea {
     property string acceptLabel: appState.t("settingsView.alertOk")
     property string cancelLabel: appState.t("settingsView.alertCancel")
     signal accepted()
+    signal dismissed()
 
     anchors.fill: parent
     z: 1000
     // Taps on the backdrop close the alert, like the call dialogs.
-    onClicked: alert.destroy()
+    onClicked: {
+        alert.dismissed()
+        alert.destroy()
+    }
 
     Rectangle { anchors.fill: parent; color: "#000000"; opacity: 0.6 }
 
@@ -60,7 +64,10 @@ MouseArea {
                     height: 40
                     type: "tertiary"
                     text: alert.cancelLabel
-                    onClicked: alert.destroy()
+                    onClicked: {
+                        alert.dismissed()
+                        alert.destroy()
+                    }
                 }
                 AppButton {
                     width: implicitWidth

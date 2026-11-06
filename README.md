@@ -111,6 +111,8 @@ A full description is in [doc/project_description.md](doc/project_description.md
 - **Camera preview on the emulator.** The Qt Multimedia render thread sometimes crashes on the screen before joining (`QVideoFrame::unmap`).
 - **Own connection indicator on the emulator.** With the camera on, it stays yellow without any packet loss, because the quality estimate stays low there.
 - **Ask to unmute.** Without audio moderation, it works only between clients of this application.
+- **Trust in the server.** The meeting page runs code from the Jitsi server. Screen sharing is confirmed in an application dialog, but the camera and microphone are allowed automatically, so join only servers you trust.
+- **Stream key.** It is kept separately for each server. A key saved by an earlier version is removed and has to be entered again.
 - **Calendar.** The tab exists, but events from the Aurora OS calendar are not read.
 
 Test details are in [doc/testing.md](doc/testing.md) (in Russian).

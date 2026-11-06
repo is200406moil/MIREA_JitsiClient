@@ -1,5 +1,14 @@
 #include "../src/appstate.h"
 #include <QCoreApplication>
+#include <QEventLoop>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QTimer>
+#include <QUrl>
 #include <QTemporaryDir>
 #include <QSettings>
 #include <QDebug>
@@ -10,6 +19,122 @@ static void require(bool condition, const char *message)
 {
     if (!condition) { std::fprintf(stderr, "FAIL: %s\n", message); std::exit(1); }
 }
+
+namespace {
+
+class FakeScreen : public ScreenFrameSource
+{
+public:
+    int starts = 0;
+    bool start() override { ++starts; return true; }
+    void stop() override {}
+    QString error() const override { return QString(); }
+    QByteArray frame(quint64 *) const override { return QByteArrayLiteral("jpeg"); }
+};
+
+class FakeLogins : public LoginStore
+{
+public:
+    QVariantMap entries;
+    QVariantMap load(const QString &host) override { return entries.value(host).toMap(); }
+    void update(const QString &host, const QVariantMap &fields) override
+    {
+        QVariantMap entry = entries.value(host).toMap();
+        for (auto it = fields.begin(); it != fields.end(); ++it) entry[it.key()] = it.value();
+        entries[host] = entry;
+    }
+};
+
+// What code on the call page can do: requests to the local server.
+QNetworkReply *wait(QNetworkReply *reply)
+{
+    QEventLoop loop;
+    QObject::connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    QTimer::singleShot(5000, &loop, &QEventLoop::quit);
+    loop.exec();
+    return reply;
+}
+
+int getStatus(QNetworkAccessManager &network, const QString &url)
+{
+    QNetworkReply *reply = wait(network.get(QNetworkRequest(QUrl(url))));
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    reply->deleteLater();
+    return status;
+}
+
+void sendEvent(QNetworkAccessManager &network, const AppState &state, const QJsonObject &event)
+{
+    QNetworkRequest request(QUrl(state.meetingUrl() + "event"));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    request.setRawHeader("Origin", state.meetingOrigin().toUtf8());
+    wait(network.post(request, QJsonDocument(event).toJson()))->deleteLater();
+}
+
+// index.html is taken from the installed application.
+void checkLocalServer(const QString &directory)
+{
+    AppState state(nullptr, directory + "/server.ini");
+    FakeScreen screen;
+    FakeLogins logins;
+    state.setScreenFrameSource(&screen);
+    state.setLoginStore(&logins);
+    QVariantMap room;
+    room["id"] = "room";
+    room["name"] = "CheckRoom";
+    room["server"] = "https://meet.example.org";
+    logins.update("meet.example.org", {{"liveStreamKey", "key-of-this-server"}});
+    require(state.startMeeting(room, true, true, false), "meeting page opens");
+    QNetworkAccessManager network;
+
+    const QString frame = state.meetingUrl() + "screen.jpg";
+    QNetworkReply *page = wait(network.get(QNetworkRequest(QUrl(state.meetingUrl()))));
+    require(page->readAll().contains("key-of-this-server"), "the page gets the key of its server");
+    page->deleteLater();
+
+    require(getStatus(network, frame) == 403, "no frames without a request");
+    sendEvent(network, state, {{"name", "screenShare"}, {"data", QJsonObject{{"active", true}}}});
+    require(screen.starts == 0 && state.screenShareWaiting(), "a page request does not start the capture");
+    require(getStatus(network, frame) == 202, "no frames while the question is open");
+    state.answerScreenShare(false);
+    require(screen.starts == 0 && getStatus(network, frame) == 403, "refusal gives no frames");
+    sendEvent(network, state, {{"name", "screenShare"}, {"data", QJsonObject{{"active", true}}}});
+    require(state.screenShareWaiting(), "a new request asks again");
+    state.answerScreenShare(true);
+    require(screen.starts == 1 && getStatus(network, frame) == 200, "frames after the answer");
+    sendEvent(network, state, {{"name", "screenShare"}, {"data", QJsonObject{{"active", false}}}});
+    require(getStatus(network, frame) == 403, "stopping closes the frames");
+    sendEvent(network, state, {{"name", "screenShare"}, {"data", QJsonObject{{"active", true}}}});
+    require(state.screenShareWaiting() && screen.starts == 1, "sharing again asks again");
+
+    sendEvent(network, state, {{"name", "liveStreamKey"}, {"data", QJsonObject{{"key", "new-key"}}}});
+    require(logins.load("meet.example.org").value("liveStreamKey") == "new-key", "stream key goes to the secure store");
+    state.setPreference("liveStreamKey", "plain");
+    require(!state.preferences().contains("liveStreamKey"), "stream key is not a preference");
+    state.finishMeeting();
+    require(!state.screenShareWaiting(), "the question ends with the meeting");
+}
+
+// A key from an earlier version does not stay in the database file.
+void checkOldStreamKey(const QString &directory)
+{
+    const QString file = directory + "/old.ini";
+    const QByteArray secret = "abcd-efgh-ijkl-mnop-old-key";
+    { AppState state(nullptr, file); }
+    const QString database = file + ".db";
+    if (!QFile::exists(database)) return;
+    {
+        Storage store;
+        QSettings none(directory + "/none.ini", QSettings::IniFormat);
+        require(store.open(database, &none), "database opens");
+        store.setValue("liveStreamKey", QString::fromLatin1(secret));
+    }
+    { AppState state(nullptr, file); require(!state.preferences().contains("liveStreamKey"), "old key is dropped"); }
+    QFile raw(database);
+    require(raw.open(QIODevice::ReadOnly) && !raw.readAll().contains(secret), "old key is overwritten in the file");
+}
+
+} // namespace
 
 int main(int argc, char **argv)
 {
@@ -95,6 +220,8 @@ int main(int argc, char **argv)
     }
     require(state.initials("Алексей Иванов") == "АИ", "Cyrillic initials");
     require(!state.isTrustedOrigin("https://meet.example.org.evil.org"), "no media trust outside active session");
+    checkOldStreamKey(dir.path());
+    checkLocalServer(dir.path());
     qInfo() << "PASS: profile, Gravatar hash, default server, validation, rooms, links, migration, persistence, database, initials";
     return 0;
 }

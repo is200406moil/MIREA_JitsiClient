@@ -196,6 +196,17 @@ void Storage::saveRoom(const QVariantMap &room)
     writeRoom(room);
 }
 
+void Storage::erase(const QString &key)
+{
+    QSqlQuery secure(m_db);
+    secure.prepare(QStringLiteral("PRAGMA secure_delete = ON"));
+    run(secure);
+    remove(key);
+    QSqlQuery vacuum(m_db);
+    vacuum.prepare(QStringLiteral("VACUUM"));
+    run(vacuum);
+}
+
 void Storage::removeRoom(const QString &id)
 {
     QSqlQuery query(m_db);

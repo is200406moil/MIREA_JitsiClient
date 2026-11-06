@@ -128,5 +128,7 @@
   "Введите название комнаты или ссылку на встречу. Адрес сервера, имя, электронная почта и параметры звука находятся в настройках. Нажмите и удерживайте комнату, чтобы добавить её в избранное или удалить из списка.": "Enter a room name or a meeting link. Your server, profile and audio options are in Settings. Touch and hold a room to add it to favorites or remove it from the list.",
   "На meet.jit.si организатору может потребоваться вход в учётную запись. Правила доступа, пароли комнат и доступные функции зависят от сервера.": "On meet.jit.si the moderator may need to sign in. Access rules, room passwords and available features depend on the server.",
   "Условия и конфиденциальность относятся к meet.jit.si. Для другого сервера действуют правила его владельца.": "These terms and privacy policy apply to meet.jit.si. Other servers have their own policies.",
-  "Код клиента: BSD-3-Clause. Jitsi Meet и официальные значки: Apache-2.0. Название и логотип Jitsi принадлежат их правообладателям.": "Client code: BSD-3-Clause. Jitsi Meet and its official icons: Apache-2.0. The Jitsi name and logo belong to their respective owners."
+  "Код клиента: BSD-3-Clause. Jitsi Meet и официальные значки: Apache-2.0. Название и логотип Jitsi принадлежат их правообладателям.": "Client code: BSD-3-Clause. Jitsi Meet and its official icons: Apache-2.0. The Jitsi name and logo belong to their respective owners.",
+  "Показать экран?": "Share your screen?",
+  "Сервер %1 запрашивает показ экрана. Участники встречи увидят всё, что на нём происходит.": "The server %1 asks to share your screen. Meeting participants will see everything that happens on it."
 }

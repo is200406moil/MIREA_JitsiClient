@@ -27,6 +27,8 @@ public:
     QVariant value(const QString &key, const QVariant &fallback = QVariant()) const;
     void setValue(const QString &key, const QVariant &value);
     void remove(const QString &key);
+    // Removes a value and overwrites it in the database file.
+    void erase(const QString &key);
 
     // Most recently used first, the rooms never used newest first.
     QVariantList rooms();

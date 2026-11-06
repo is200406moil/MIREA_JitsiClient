@@ -176,6 +176,16 @@ Page {
             case "preference":
                 appState.setPreference(data.key, data.value)
                 break
+            case "screenShare":
+                if (!data.active) {
+                    if (page.screenShareAlert) page.screenShareAlert.destroy()
+                    page.screenShareAlert = null
+                } else if (appState.screenShareWaiting() && !page.screenShareAlert) {
+                    page.screenShareAlert = screenShareAlertComponent.createObject(alertRoot, {
+                        title: appState.screenShareTitle(), text: appState.screenShareText()
+                    })
+                }
+                break
             case "closeWhiteboard":
                 if (page.whiteboardPage) pageStack.pop(page)
                 break
@@ -187,6 +197,31 @@ Page {
     }
 
     property var whiteboardPage: null
+    property var screenShareAlert: null
+
+    // The sizes of AlertDialog are in the units of the other screens.
+    Item {
+        id: alertRoot
+        width: page.width / AppStyle.dp
+        height: page.height / AppStyle.dp
+        scale: AppStyle.dp
+        transformOrigin: Item.TopLeft
+        z: 1000
+    }
+
+    Component {
+        id: screenShareAlertComponent
+        AlertDialog {
+            onAccepted: {
+                page.screenShareAlert = null
+                appState.answerScreenShare(true)
+            }
+            onDismissed: {
+                page.screenShareAlert = null
+                appState.answerScreenShare(false)
+            }
+        }
+    }
 
     // Called by WhiteboardPage when it is closed.
     function whiteboardClosed() {

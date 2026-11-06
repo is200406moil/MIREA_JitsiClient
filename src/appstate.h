@@ -71,6 +71,12 @@ public:
     Q_INVOKABLE void appendCallLog(const QString &message);
     Q_INVOKABLE void finishMeeting();
     Q_INVOKABLE bool isTrustedOrigin(const QString &origin) const;
+    // Screen capture starts only after the user answers in the application's
+    // own interface: the call page also runs code of the Jitsi server.
+    Q_INVOKABLE bool screenShareWaiting() const { return m_screenShare == ScreenShareWaiting; }
+    Q_INVOKABLE QString screenShareTitle() const;
+    Q_INVOKABLE QString screenShareText() const;
+    Q_INVOKABLE void answerScreenShare(bool allow);
     Q_INVOKABLE QString initials(const QString &name) const;
     // Jitsi Meet strings (qml/call/lang), the same files the call screen uses.
     Q_INVOKABLE QString t(const QString &key, const QVariantMap &params = QVariantMap()) const;
@@ -99,7 +105,9 @@ private:
 
     Storage m_store;
     QTcpServer m_http;
+    enum ScreenShareState { ScreenShareNone, ScreenShareWaiting, ScreenShareAllowed, ScreenShareRefused };
     ScreenFrameSource *m_screen = nullptr;
+    ScreenShareState m_screenShare = ScreenShareNone;
     LoginStore *m_logins = nullptr;
     QVariantList m_rooms;
     QVariantMap m_activeRoom;
