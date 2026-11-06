@@ -19,6 +19,8 @@
             <button id="insecure-label" class="label insecure" hidden><i class="icon medium" data-icon="warning"></i></button>
             <button id="audio-only-label" class="label audio-only" hidden data-t="videoStatus.lowBandwidthMode"></button>
             <button id="live-label" class="label live" hidden><i class="icon medium" data-icon="sites"></i></button>
+            <button id="rec-label" class="label live" hidden><i class="icon medium" data-icon="record"></i></button>
+            <button id="tr-label" class="label transcribing" hidden></button>
         </div>
         <button id="tb-camera" class="tb-button"><i class="icon" data-icon="camera-refresh"></i></button>
         <button id="tb-participants" class="tb-button"><i class="icon" data-icon="users"></i><span id="participants-count" class="badge" hidden></span></button>
@@ -49,6 +51,7 @@
         <nav id="chat-tabs" class="chat-tabs" hidden>
             <button data-tab="chat"></button>
             <button data-tab="polls"></button>
+            <button data-tab="cc"></button>
         </nav>
         <div id="chat-pane" class="chat-pane">
         <div id="chat-messages" class="chat-messages"></div>
@@ -61,6 +64,10 @@
             <input id="chat-input" autocomplete="off" enterkeyhint="send">
             <button id="chat-send" class="send" type="submit" disabled><i class="icon" data-icon="send"></i></button>
         </form>
+        </div>
+        <div id="cc-pane" class="polls-pane" hidden>
+            <div id="cc-list" class="polls-list"></div>
+            <footer class="polls-footer"><button id="cc-toggle" class="button primary wide"></button></footer>
         </div>
         <div id="polls-pane" class="polls-pane" hidden>
             <div id="polls-list" class="polls-list"></div>

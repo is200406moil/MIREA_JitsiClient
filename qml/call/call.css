@@ -366,6 +366,12 @@ h1 { margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; }
 /* RecordingLabel (iconError) and StartLiveStreamDialog.native. */
 .label.live { background: var(--danger); padding: 4px; }
 .label.live.pending { opacity: .6; }
+.label.transcribing { background: var(--ui05); padding: 4px 8px; }
+.cc-empty { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 48px 16px; color: var(--text03); text-align: center; }
+.cc-message { padding: 8px 16px; }
+.cc-message .cc-name { color: var(--text03); font-size: 12px; line-height: 16px; }
+.cc-message .cc-text { color: var(--text01); }
+.cc-message.interim .cc-text { color: var(--text03); }
 .expanded-label.live { background: var(--danger); }
 .header-action { margin-left: auto; padding: 0 12px; height: 40px; border: 0; background: none; color: var(--action01);
     font: inherit; font-weight: 600; font-size: 16px; }

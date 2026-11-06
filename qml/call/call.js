@@ -217,6 +217,10 @@
         volumes: new Map(),
         iAmVisitor: false,
         liveStream: { status: 'off', session: null },
+        recording: { status: 'off', session: null },
+        transcribing: false,
+        subtitlesRequested: false,
+        subtitles: [],
         demoteActor: '',
         promotionRequests: new Map(),
         visitorCount: 0,
@@ -503,6 +507,10 @@
         $('audio-only-label').hidden = !state.audioOnly;
         $('live-label').hidden = !liveStreamRunning();
         $('live-label').classList.toggle('pending', state.liveStream.status === 'pending');
+        $('rec-label').hidden = !recordingRunning();
+        $('rec-label').classList.toggle('pending', state.recording.status === 'pending');
+        $('tr-label').hidden = !state.transcribing;
+        $('tr-label').textContent = t('transcribing.tr');
         // A visitor is not one of the meeting participants.
         const count = state.remotes.size + (state.iAmVisitor ? 0 : 1);
         $('participants-count').hidden = !state.joined;
@@ -597,6 +605,10 @@
         } else if (kind === 'live') {
             // RecordingExpandedLabel
             label.textContent = t(state.liveStream.status === 'pending' ? 'liveStreaming.expandedPending' : 'liveStreaming.expandedOn');
+        } else if (kind === 'recording') {
+            label.textContent = t(state.recording.status === 'pending' ? 'recording.expandedPending' : 'recording.expandedOn');
+        } else if (kind === 'transcribing') {
+            label.textContent = t('transcribing.expandedLabel');
         }
         label.hidden = false;
         expandedTimer = setTimeout(() => { label.hidden = true; }, 5000);
@@ -755,6 +767,14 @@
             // LiveStreamButton
             if (liveStreamButtonVisible()) {
                 sheetItem(sheet, 'sites', t(liveStreamRunning() ? 'dialog.stopLiveStreaming' : 'dialog.startLiveStreaming'), toggleLiveStream);
+            }
+            // RecordButton
+            if (recordButtonVisible()) {
+                sheetItem(sheet, 'record', t(recordingRunning() ? 'dialog.stopRecording' : 'dialog.startRecording'), toggleRecording);
+            }
+            // ClosedCaptionButton: subtitles are shown in the chat screen.
+            if (closedCaptionsEnabled()) {
+                sheetItem(sheet, 'subtitles', t('transcribing.subtitles'), () => openScreen('chat', 'cc'));
             }
             if (whiteboardButtonVisible()) {
                 sheetItem(sheet, 'whiteboard', t(state.whiteboardOpen ? 'toolbar.hideWhiteboard' : 'toolbar.showWhiteboard'), toggleWhiteboard);
@@ -2338,7 +2358,165 @@
         showNotification({ key: 'live-stream', type: 'error', title, description, timeout: 10000 });
     }
 
+    // getRecordButtonProps: file recording for a moderator of a server with
+    // recordingService.enabled, not in a breakout room.
+    function recordButtonVisible() {
+        const config = (state.serverConfig || {}).recordingService || {};
+        return !!config.enabled && isModerator() && !isInBreakoutRoom() && !state.iAmVisitor;
+    }
+
+    function recordingRunning() {
+        return state.recording.status === 'on' || state.recording.status === 'pending';
+    }
+
+    function toggleRecording() {
+        if (!recordingRunning() && liveStreamRunning()) {
+            showNotification({ key: 'recording', title: t('dialog.recordingDisabledBecauseOfActiveLiveStreamingTooltip') });
+            return;
+        }
+        if (recordingRunning()) {
+            confirmDialog({
+                title: t('dialog.recording'),
+                text: t('dialog.stopRecordingWarning'),
+                confirmLabel: t('dialog.Yes'),
+                onConfirm: () => {
+                    const session = state.recording.session;
+                    if (session && state.conference) state.conference.stopRecording(session.getID());
+                }
+            });
+            return;
+        }
+        confirmDialog({
+            title: t('dialog.startRecording'),
+            confirmLabel: t('dialog.startRecording'),
+            onConfirm: startRecording
+        });
+    }
+
+    function startRecording() {
+        if (!state.conference) return;
+        state.recording = { status: 'pending', session: null };
+        showNotification({ key: 'recording', title: t('dialog.recording'), description: t('recording.pending') });
+        render();
+        Promise.resolve(state.conference.startRecording({
+            mode: 'file',
+            appData: JSON.stringify({ file_recording_metadata: { share: true } })
+        })).catch(error => {
+            log('recording', error && (error.message || error));
+            state.recording = { status: 'off', session: null };
+            showRecordingError(error && (error.message || error));
+            render();
+        });
+    }
+
+    // _showRecordingErrorNotification for the file mode.
+    function showRecordingError(error) {
+        const errors = JitsiMeetJS.constants.recording.error;
+        let title = t('recording.failedToStart');
+        let description = t('recording.error');
+        if (error === errors.SERVICE_UNAVAILABLE) {
+            title = t('recording.unavailableTitle');
+            description = t('recording.unavailable', { serviceName: t('recording.serviceName') });
+        } else if (error === errors.RESOURCE_CONSTRAINT) {
+            title = t('recording.busyTitle');
+            description = t('recording.busy');
+        } else if (error === errors.UNEXPECTED_REQUEST) {
+            title = t('recording.inProgress');
+            description = t('recording.sessionAlreadyActive');
+        }
+        showNotification({ key: 'recording', type: 'error', title, description, timeout: 10000 });
+    }
+
+    function onFileRecordingChanged(session) {
+        const status = session.getStatus();
+        const previous = state.recording.status;
+        state.recording = { status, session: status === 'off' ? null : session };
+        const nameOf = who => {
+            const id = who && (typeof who === 'string' ? who : who.getId && who.getId());
+            const p = id && person(id);
+            return p ? displayNameOf(p) : '';
+        };
+        if (status === 'on' && previous !== 'on') {
+            const name = nameOf(session.getInitiator());
+            showNotification({ key: 'recording', title: t('dialog.recording'),
+                description: name ? t('recording.onBy', { name }) : t('recording.on') });
+        } else if (status === 'off') {
+            if (session.getError()) showRecordingError(session.getError());
+            else if (previous === 'on') {
+                const name = nameOf(session.getTerminator());
+                showNotification({ key: 'recording', title: t('dialog.recording'),
+                    description: name ? t('recording.offBy', { name }) : t('recording.off') });
+            }
+        }
+        render();
+    }
+
+    // ---------------------------------------------------------- subtitles
+
+    // features/subtitles: the transcriber sends the text to the participants
+    // that asked for it; isCCTabEnabled shows it in a tab of the chat screen.
+    const MAX_SUBTITLES = 300;
+
+    function closedCaptionsEnabled() {
+        const config = (state.serverConfig || {}).transcription || {};
+        return !!config.enabled && !config.disableClosedCaptions && !isInBreakoutRoom();
+    }
+
+    function setSubtitlesRequested(enabled) {
+        if (!state.conference) return;
+        state.subtitlesRequested = enabled;
+        state.conference.setLocalParticipantProperty('requestingTranscription', enabled);
+        const statuses = JitsiMeetJS.constants.transcriptionStatus;
+        if (enabled && statuses && state.conference.getTranscriptionStatus() === statuses.OFF && isModerator()) {
+            Promise.resolve(state.conference.dial('jitsi_meet_transcribe')).catch(error => {
+                log('transcriber', error && (error.message || error));
+                state.conference.setLocalParticipantProperty('requestingTranscription', false);
+                state.subtitlesRequested = false;
+                showNotification({ key: 'subtitles', type: 'error', title: t('recording.failedToStart'), description: t('recording.error'), timeout: 10000 });
+                renderSubtitles();
+            });
+        }
+        renderSubtitles();
+    }
+
+    function onTranscriptionMessage(json) {
+        if (!json || json.type !== 'transcription-result' || !closedCaptionsEnabled()) return;
+        if (!Array.isArray(json.transcript) || !json.transcript[0]) return;
+        const entry = {
+            id: json.message_id,
+            name: (json.participant && json.participant.name) || '',
+            text: String(json.transcript[0].text || ''),
+            interim: !!json.is_interim
+        };
+        const index = state.subtitles.findIndex(item => item.id === entry.id);
+        if (index >= 0) state.subtitles[index] = entry;
+        else state.subtitles.push(entry);
+        if (state.subtitles.length > MAX_SUBTITLES) state.subtitles.shift();
+        if (state.screen === 'chat' && state.chatTab === 'cc') renderSubtitles();
+    }
+
+    function renderSubtitles() {
+        const list = $('cc-list');
+        const toggle = $('cc-toggle');
+        list.textContent = '';
+        if (!state.subtitles.length) {
+            const empty = el('div', 'cc-empty');
+            empty.appendChild(icon('subtitles', 'large'));
+            empty.appendChild(el('div', '', t('transcribing.subtitles')));
+            list.appendChild(empty);
+        }
+        state.subtitles.forEach(item => {
+            const row = el('div', `cc-message${item.interim ? ' interim' : ''}`);
+            if (item.name) row.appendChild(el('div', 'cc-name', item.name));
+            row.appendChild(el('div', 'cc-text', item.text));
+            list.appendChild(row);
+        });
+        list.scrollTop = list.scrollHeight;
+        toggle.textContent = t(state.subtitlesRequested ? 'transcribing.stop' : 'transcribing.start');
+    }
+
     function onRecorderStateChanged(session) {
+        if (session && session.getMode() === 'file') { onFileRecordingChanged(session); return; }
         if (!session || session.getMode() !== 'stream') return;
         const status = session.getStatus();
         const previous = state.liveStream.status;
@@ -2759,18 +2937,24 @@
     // has the polls component.
     function renderChatTabs() {
         const polls = !!pollsHandler() && !state.serverConfig.disablePolls;
-        if (!polls) state.chatTab = 'chat';
-        $('chat-tabs').hidden = !polls;
+        const captions = closedCaptionsEnabled();
+        if ((!polls && state.chatTab === 'polls') || (!captions && state.chatTab === 'cc')) state.chatTab = 'chat';
+        $('chat-tabs').hidden = !polls && !captions;
+        $('chat-tabs').querySelector('[data-tab="polls"]').hidden = !polls;
+        $('chat-tabs').querySelector('[data-tab="cc"]').hidden = !captions;
         $('chat-pane').hidden = state.chatTab !== 'chat';
         $('polls-pane').hidden = state.chatTab !== 'polls';
+        $('cc-pane').hidden = state.chatTab !== 'cc';
         $('chat').querySelector('h1').textContent = t('chat.title');
         $('chat-tabs').querySelectorAll('[data-tab]').forEach(tab => {
             const active = tab.dataset.tab === state.chatTab;
             tab.classList.toggle('active', active);
+            if (tab.dataset.tab === 'cc') { tab.textContent = t('transcribing.subtitles'); return; }
             const count = tab.dataset.tab === 'chat' ? state.unread : state.pollsUnread;
             tab.textContent = t(`chat.tabs.${tab.dataset.tab}`) + (count && !active ? ` (${count})` : '');
         });
-        if (state.chatTab === 'polls') { state.pollsUnread = 0; renderPolls(); }
+        if (state.chatTab === 'cc') renderSubtitles();
+        else if (state.chatTab === 'polls') { state.pollsUnread = 0; renderPolls(); }
         else { state.unread = 0; renderChat(); }
     }
 
@@ -3569,6 +3753,7 @@
             render();
         });
         on(C.ENDPOINT_MESSAGE_RECEIVED, (participant, payload) => {
+            if (participant && participant.isHidden && participant.isHidden()) onTranscriptionMessage(payload);
             if (payload && payload.name === 'endpoint-reaction' && Array.isArray(payload.reactions)) {
                 payload.reactions.forEach(showReaction);
             }
@@ -3637,6 +3822,16 @@
         });
         on(C.START_MUTED_POLICY_CHANGED, onStartMutedPolicy);
         on(C.RECORDER_STATE_CHANGED, onRecorderStateChanged);
+        if (C.NON_PARTICIPANT_MESSAGE_RECEIVED) {
+            on(C.NON_PARTICIPANT_MESSAGE_RECEIVED, (id, json) => { if (id === 'transcriber') onTranscriptionMessage(json); });
+        }
+        if (C.TRANSCRIPTION_STATUS_CHANGED) {
+            on(C.TRANSCRIPTION_STATUS_CHANGED, status => {
+                const statuses = JitsiMeetJS.constants.transcriptionStatus;
+                state.transcribing = !!statuses && status === statuses.ON;
+                render();
+            });
+        }
         if (C.VISITORS_MESSAGE) on(C.VISITORS_MESSAGE, onVisitorsMessage);
         if (C.VISITORS_REJECTION) on(C.VISITORS_REJECTION, () => { if (state.local.raisedHand) toggleRaiseHand(); });
         if (C.PROPERTIES_CHANGED) on(C.PROPERTIES_CHANGED, properties => {
@@ -4040,6 +4235,9 @@
         $('insecure-label').addEventListener('click', event => { event.stopPropagation(); showExpandedLabel('insecure'); });
         $('audio-only-label').addEventListener('click', event => { event.stopPropagation(); showExpandedLabel('audio-only'); });
         $('live-label').addEventListener('click', event => { event.stopPropagation(); showExpandedLabel('live'); });
+        $('rec-label').addEventListener('click', event => { event.stopPropagation(); showExpandedLabel('recording'); });
+        $('tr-label').addEventListener('click', event => { event.stopPropagation(); showExpandedLabel('transcribing'); });
+        $('cc-toggle').addEventListener('click', () => setSubtitlesRequested(!state.subtitlesRequested));
         $('stream-start').addEventListener('click', startLiveStream);
         $('expanded-label').addEventListener('click', event => { if (event.target.tagName !== 'A') $('expanded-label').hidden = true; });
         document.addEventListener('click', event => {
