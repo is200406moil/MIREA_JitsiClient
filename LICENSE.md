@@ -23,4 +23,6 @@ These components keep their own licenses:
 | flag-icons | MIT | `qml/flags/LICENSE` |
 | Emoji graphics | CC BY 4.0 | `qml/call/emoji/LICENSE-GRAPHICS.txt` |
 
+The MIREA emblem in `icons/university/mirea.png` belongs to MIREA — Russian Technological University. It identifies the university, as the repository rules ask, and is not covered by the BSD 3-Clause License.
+
 lib-jitsi-meet (Apache 2.0) is not part of this repository: it is loaded from the Jitsi server during a meeting.

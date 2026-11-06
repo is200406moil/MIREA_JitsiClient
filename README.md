@@ -106,7 +106,7 @@ A full description is in [doc/project_description.md](doc/project_description.md
 
 - **No device testing yet.** The application has been tested on the emulator only.
 - **Screen sharing.** Implemented through StreamCamera but not confirmed: on the emulator, capture starts and no frames arrive.
-- **Aurora Keystore.** It is unavailable on the emulator, where a fallback key file is used, so computing the container password in the store has not been tested.
+- **Aurora Keystore.** It is unavailable on a regular emulator, where a fallback key file is used. Work with the store has been tested on the emulator with SoftHSM, bypassing the system CUSE layer. The regular path and TEE have to be tested on a device.
 - **Rejoining.** Without restarting the application, `gum.not_found` for audio sometimes appears. The cause is not known.
 - **Camera preview on the emulator.** The Qt Multimedia render thread sometimes crashes on the screen before joining (`QVideoFrame::unmap`).
 - **Own connection indicator on the emulator.** With the camera on, it stays yellow without any packet loss, because the quality estimate stays low there.

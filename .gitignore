@@ -13,3 +13,4 @@ documentation.list
 *.qm
 *.moc
 tests/.build/
+tests/.build-ks/
