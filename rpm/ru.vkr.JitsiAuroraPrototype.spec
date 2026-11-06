@@ -1,7 +1,7 @@
 Name:       ru.vkr.JitsiAuroraPrototype
 Summary:    Клиент видеоконференций Jitsi Meet для Авроры
 Version:    0.1
-Release:    126
+Release:    127
 License:    BSD-3-Clause
 URL:        https://auroraos.ru
 Source0:    %{name}-%{version}.tar.bz2
@@ -69,6 +69,9 @@ done
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
 
 %changelog
+* Fri Nov 06 2026 Giyosidinov Ismoilkhodzha <is200406moil@gmail.com> 0.1-127
+- Remove the Pictures, UserDirs and Audio permissions
+
 * Fri Nov 06 2026 Giyosidinov Ismoilkhodzha <is200406moil@gmail.com> 0.1-126
 - Confirm screen sharing in an application dialog
 - Keep saved logins when the key store does not answer

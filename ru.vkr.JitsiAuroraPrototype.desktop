@@ -7,7 +7,7 @@ Name=Jitsi Meet
 Name[ru]=Jitsi Meet
 
 [X-Application]
-Permissions=SecureStorage;Audio;Camera;Internet;Microphone;Pictures;WebView;DeviceInfo;UserDirs;ScreenCapture
+Permissions=SecureStorage;Camera;Internet;Microphone;WebView;DeviceInfo;ScreenCapture
 OrganizationName=ru.vkr
 ApplicationName=JitsiAuroraPrototype
 ExecDBus=/usr/bin/ru.vkr.JitsiAuroraPrototype
