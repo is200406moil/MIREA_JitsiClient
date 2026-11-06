@@ -319,6 +319,18 @@
         return first.done ? state.local : first.value;
     }
 
+    // AudioLevels._updateLargeVideoShadow: the rings around the avatar of the
+    // participant on the stage while that participant speaks.
+    function onAudioLevel(id, level) {
+        const node = $('stage').querySelector('.avatar');
+        const view = node && node.closest('[data-id]');
+        if (!view || view.dataset.id !== id) return;
+        const value = parseFloat(level) || 0;
+        const inner = value > 0.15 ? 20 : 0;
+        const outer = Math.round(inner * 2 * value + inner);
+        node.style.boxShadow = `0 0 ${inner ? 2 : 0}px ${inner}px rgba(255, 255, 255, .4), 0 0 ${outer ? 6 : 0}px ${outer}px rgba(255, 255, 255, .2)`;
+    }
+
     function videoTrackOf(p) {
         const track = p && p.tracks.video;
         if (!track || track.isMuted()) return null;
@@ -369,6 +381,7 @@
             const key = displayNameOf(p) + '|' + (p.avatarURL || '');
             if (node.dataset.key !== key) {
                 node.dataset.key = key;
+                node.style.boxShadow = '';
                 fillAvatar(node, p);
             }
         } else if (holder) {
@@ -3822,6 +3835,7 @@
         });
         on(C.START_MUTED_POLICY_CHANGED, onStartMutedPolicy);
         on(C.RECORDER_STATE_CHANGED, onRecorderStateChanged);
+        on(C.TRACK_AUDIO_LEVEL_CHANGED, onAudioLevel);
         if (C.NON_PARTICIPANT_MESSAGE_RECEIVED) {
             on(C.NON_PARTICIPANT_MESSAGE_RECEIVED, (id, json) => { if (id === 'transcriber') onTranscriptionMessage(json); });
         }

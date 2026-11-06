@@ -1,7 +1,7 @@
 Name:       ru.vkr.JitsiAuroraPrototype
 Summary:    Клиент видеоконференций Jitsi Meet для Авроры
 Version:    0.1
-Release:    128
+Release:    129
 License:    BSD-3-Clause
 URL:        https://auroraos.ru
 Source0:    %{name}-%{version}.tar.bz2
@@ -69,6 +69,9 @@ done
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
 
 %changelog
+* Fri Nov 06 2026 Giyosidinov Ismoilkhodzha <is200406moil@gmail.com> 0.1-129
+- Show audio level rings around the avatar of the speaker
+
 * Fri Nov 06 2026 Giyosidinov Ismoilkhodzha <is200406moil@gmail.com> 0.1-128
 - Add file recording and a subtitles tab in the chat screen
 
