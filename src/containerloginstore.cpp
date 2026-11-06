@@ -1,4 +1,5 @@
 #include "containerloginstore.h"
+#include "keystorekey.h"
 
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
@@ -38,7 +39,7 @@ ContainerLoginStore::~ContainerLoginStore()
     if (!m_path.isEmpty()) m_sstore->call(QStringLiteral("Close"));
 }
 
-QString ContainerLoginStore::containerKey(bool create)
+QString ContainerLoginStore::fileKey(bool create)
 {
     const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     QFile file(dir + QStringLiteral("/storage.key"));
@@ -62,6 +63,32 @@ QString ContainerLoginStore::containerKey(bool create)
     return out.commit() ? key : QString();
 }
 
+// The password to open or create the container with. The key store comes
+// first; a container of an earlier version moves to it from storage.key.
+QString ContainerLoginStore::chooseKey(bool exists)
+{
+    QString error;
+    const QString stored = keystoreContainerPassword(&error);
+    const QString legacy = fileKey(false);
+    if (stored.isEmpty()) {
+        emit message(QStringLiteral("key store is not available, using the key file: ") + error);
+        return fileKey(!exists);
+    }
+    if (!exists) {
+        if (!legacy.isEmpty()) QFile::remove(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/storage.key"));
+        return stored;
+    }
+    if (legacy.isEmpty()) return stored;
+    const QDBusMessage reply = m_sstore->call(QStringLiteral("Recrypt"), legacy, stored);
+    if (replyIs(reply, 1) && reply.arguments().at(0).toInt() == SStoreSuccess) {
+        QFile::remove(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/storage.key"));
+        emit message(QStringLiteral("logins container moved to the key store"));
+        return stored;
+    }
+    emit message(QStringLiteral("logins container was not moved to the key store: ") + reply.errorMessage());
+    return legacy;
+}
+
 bool ContainerLoginStore::open()
 {
     if (!m_path.isEmpty()) return true;
@@ -76,27 +103,27 @@ bool ContainerLoginStore::open()
         return false;
     }
     bool exists = reply.arguments().at(0).toBool();
-    QString key = containerKey(!exists);
+    const QString key = chooseKey(exists);
     if (exists && key.isEmpty()) {
-        // The key is gone (the application data was cleared): the old
+        // No key opens it (the application data was cleared): the old
         // container cannot be opened any more, a new one replaces it.
         m_sstore->call(QStringLiteral("Delete"));
         exists = false;
-        key = containerKey(true);
     }
-    if (key.isEmpty()) {
+    const QString useKey = key.isEmpty() ? chooseKey(false) : key;
+    if (useKey.isEmpty()) {
         emit message(QStringLiteral("secure storage: no container key"));
         return false;
     }
     if (!exists) {
-        reply = m_sstore->call(QStringLiteral("Create"), key);
+        reply = m_sstore->call(QStringLiteral("Create"), useKey);
         if (!replyIs(reply, 1) || reply.arguments().at(0).toInt() != SStoreSuccess) {
             emit message(QStringLiteral("secure storage: the container was not created ")
                          + reply.errorMessage() + QString::number(replyIs(reply, 1) ? reply.arguments().at(0).toInt() : -1));
             return false;
         }
     }
-    reply = m_sstore->call(QStringLiteral("Open"), key);
+    reply = m_sstore->call(QStringLiteral("Open"), useKey);
     if (!replyIs(reply, 2) || reply.arguments().at(0).toInt() != SStoreSuccess) {
         emit message(QStringLiteral("secure storage: the container was not opened ") + reply.errorMessage());
         return false;

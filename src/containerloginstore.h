@@ -13,18 +13,14 @@ class QDBusInterface;
 // as in the Aurora OS Secret Keeper example). The container is an encrypted
 // directory; the entries are kept in a JSON file inside it.
 //
-// The container password is generated on first use and kept in the
-// application's private data directory, which the sandbox closes to other
-// applications, so the user never types it (the meeting must open without
-// asking for anything again).
+// The container password comes from the system key store (keystorekey.h), so
+// the user never types it (the meeting must open without asking for anything
+// again) and no secret lies next to the data. A container of an earlier
+// version, with its password in storage.key, is recrypted once. If the key
+// store cannot be used, the file stays in use and the journal says so.
 //
-// KNOWN LIMITATION, not production grade yet (2026-11-02): the key lies next
-// to the data, so root or full file system access can open the container;
-// sstore also passes the container password on the securefs command line,
-// where it shows in the system journal. Waiting for Open Mobile Platform's
-// answer on a system key store for regular applications. The fallback is a
-// storage password set by the user and asked once per device boot; only
-// containerKey() changes for either.
+// KNOWN LIMITATION: sstore passes the container password on the securefs
+// command line, where it shows in the system journal.
 class ContainerLoginStore : public QObject, public LoginStore
 {
     Q_OBJECT
@@ -40,7 +36,8 @@ signals:
 
 private:
     bool open();
-    QString containerKey(bool create);
+    QString fileKey(bool create);
+    QString chooseKey(bool exists);
     QJsonObject readEntries() const;
     void writeEntries(const QJsonObject &entries);
 

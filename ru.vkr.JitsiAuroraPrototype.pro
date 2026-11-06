@@ -7,6 +7,7 @@ CONFIG += \
 
 PKGCONFIG += \
     aurorawebview \
+    qca2-qt5 \
     streamcamera
 
 contains(QT_ARCH, x86_64) {
@@ -28,6 +29,7 @@ SOURCES += \
     src/appstate.cpp \
     src/callcontrol.cpp \
     src/containerloginstore.cpp \
+    src/keystorekey.cpp \
     src/screencapture.cpp \
     src/storage.cpp
 
@@ -36,6 +38,7 @@ HEADERS += \
     src/callcontrol.h \
     src/clienttranslator.h \
     src/containerloginstore.h \
+    src/keystorekey.h \
     src/screencapture.h \
     src/storage.h
 
