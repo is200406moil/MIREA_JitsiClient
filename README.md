@@ -33,7 +33,7 @@ A Jitsi Meet video conferencing client for smartphones running Aurora OS 5. The 
 
 - **Rooms.** A room name or link, meeting history by date, a room menu (removal, dial-in numbers), a warning about an insecure room name.
 - **Profile.** Name and email, a Gravatar avatar that other participants see.
-- **Meeting.** Camera, microphone, camera switching, tile view, chat and private messages, polls, reactions, GIFs (GIPHY), raised hand, whiteboard, shared YouTube video, speaker statistics, audio-only mode. A connection indicator appears on the tile of a participant with a poor connection, red or yellow, and disappears when the connection is stable again.
+- **Meeting.** Camera, microphone, camera switching, tile view, chat and private messages, polls, reactions, GIFs (GIPHY), raised hand, whiteboard, shared YouTube video, speaker statistics, audio-only mode, recording and subtitles on servers that have them. Audio level rings appear around the avatar of the speaker on the main view. A connection indicator appears on the tile of a participant with a poor connection, red or yellow, and disappears when the connection is stable again.
 - **Moderation.** Actions on participants, mute everyone with audio moderation, lobby, room password, breakout rooms, visitors, chat restrictions, follow me.
 - **Live streaming** to YouTube by stream key.
 - **Protected servers.** A login and password (Prosody) or an organizer token (JWT). They are kept in an encrypted container, and the next meetings open without asking again.
@@ -115,6 +115,7 @@ A full description is in [doc/project_description.md](doc/project_description.md
 - **Stream key.** It is kept separately for each server. A key saved by an earlier version is removed and has to be entered again.
 - **Files in chat.** Not implemented. The `fileSharing` feature exists only in the Jitsi web client and needs separate server setup.
 - **Launch.** On the emulator the application sometimes opens minimized, on its cover (1 time out of 3 in the check). The cause is not known.
+- **Recording and subtitles.** The buttons appear when the server enables them. They follow the Jitsi sources but have not been tested with a real Jibri or transcriber: the request reaches the test server and is refused, because it has neither service. Choosing a language, translated subtitles and recording sounds are not implemented.
 - **Calendar.** The tab exists, but events from the Aurora OS calendar are not read.
 
 Test details are in [doc/testing.md](doc/testing.md) (in Russian).

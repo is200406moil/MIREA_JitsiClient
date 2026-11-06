@@ -2344,9 +2344,9 @@
         render();
         Promise.resolve(state.conference.startRecording({ mode: 'stream', streamId: key }))
             .catch(error => {
-                log('live stream', error && (error.message || error));
+                log('live stream', recorderError(error));
                 state.liveStream = { status: 'off', session: null };
-                showLiveStreamError(error && (error.message || error));
+                showLiveStreamError(recorderError(error));
                 render();
             });
     }
@@ -2369,6 +2369,21 @@
             description = t('liveStreaming.policyError');
         }
         showNotification({ key: 'live-stream', type: 'error', title, description, timeout: 10000 });
+    }
+
+    // A refused request comes as the XMPP error stanza of the server.
+    function recorderError(error) {
+        if (!error) return '';
+        if (typeof error === 'string') return error;
+        if (error.message) return error.message;
+        if (error.querySelector) {
+            const errors = JitsiMeetJS.constants.recording.error;
+            const stanza = error.querySelector('error');
+            const known = { 'service-unavailable': errors.SERVICE_UNAVAILABLE, 'resource-constraint': errors.RESOURCE_CONSTRAINT };
+            for (const name of Object.keys(known)) { if (stanza && stanza.querySelector(name)) return known[name]; }
+            return stanza && stanza.firstElementChild ? stanza.firstElementChild.tagName : 'error';
+        }
+        return String(error);
     }
 
     // getRecordButtonProps: file recording for a moderator of a server with
@@ -2415,9 +2430,9 @@
             mode: 'file',
             appData: JSON.stringify({ file_recording_metadata: { share: true } })
         })).catch(error => {
-            log('recording', error && (error.message || error));
+            log('recording', recorderError(error));
             state.recording = { status: 'off', session: null };
-            showRecordingError(error && (error.message || error));
+            showRecordingError(recorderError(error));
             render();
         });
     }
@@ -2482,7 +2497,7 @@
         const statuses = JitsiMeetJS.constants.transcriptionStatus;
         if (enabled && statuses && state.conference.getTranscriptionStatus() === statuses.OFF && isModerator()) {
             Promise.resolve(state.conference.dial('jitsi_meet_transcribe')).catch(error => {
-                log('transcriber', error && (error.message || error));
+                log('transcriber', recorderError(error));
                 state.conference.setLocalParticipantProperty('requestingTranscription', false);
                 state.subtitlesRequested = false;
                 showNotification({ key: 'subtitles', type: 'error', title: t('recording.failedToStart'), description: t('recording.error'), timeout: 10000 });
