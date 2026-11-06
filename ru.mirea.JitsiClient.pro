@@ -1,4 +1,4 @@
-TARGET = ru.vkr.JitsiAuroraPrototype
+TARGET = ru.mirea.JitsiClient
 
 QT += network dbus sql
 
@@ -43,7 +43,7 @@ HEADERS += \
     src/storage.h
 
 DISTFILES += \
-    rpm/ru.vkr.JitsiAuroraPrototype.spec \
+    rpm/ru.mirea.JitsiClient.spec \
 
 AURORAAPP_ICONS = 86x86 108x108 128x128 172x172
 

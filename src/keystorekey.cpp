@@ -14,7 +14,7 @@ const int KeySize = 48;
 // The PIN of the USERAPP token, as in the Aurora OS Keystore example: the
 // token is already bound to this application and this user.
 const char TokenPin[] = "0000";
-const char Message[] = "ru.vkr.JitsiAuroraPrototype/logins-container";
+const char Message[] = "ru.mirea.JitsiClient/logins-container";
 const unsigned long TimeoutMs = 30000;
 
 // The token module: TEE on devices that have it, SoftHSM on the others and

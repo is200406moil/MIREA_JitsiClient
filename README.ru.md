@@ -50,7 +50,7 @@
 
 Общее руководство: [Aurora SDK](https://developer.auroraos.ru/doc/sdk). Дополнительные модули и параметры не нужны.
 
-В Aurora IDE откройте `ru.vkr.JitsiAuroraPrototype.pro`, выберите цель и соберите проект. Из командной строки:
+В Aurora IDE откройте `ru.mirea.JitsiClient.pro`, выберите цель и соберите проект. Из командной строки:
 
 ```bash
 sfdk config target=AuroraOS-5.2.1.200-aarch64

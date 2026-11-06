@@ -10,8 +10,8 @@ Page {
     objectName: "mainPage"
     allowedOrientations: Orientation.All
     property int selectedTab: 0
-    ConfigurationValue { id: legacyRooms; key: "/apps/ru.vkr.JitsiAuroraPrototype/rooms"; defaultValue: "[]" }
-    ConfigurationValue { id: legacyName; key: "/apps/ru.vkr.JitsiAuroraPrototype/displayName"; defaultValue: "" }
+    ConfigurationValue { id: legacyRooms; key: "/apps/ru.mirea.JitsiClient/rooms"; defaultValue: "[]" }
+    ConfigurationValue { id: legacyName; key: "/apps/ru.mirea.JitsiClient/displayName"; defaultValue: "" }
     Component.onCompleted: appState.importLegacy(legacyRooms.value, legacyName.value)
 
     function prepareRoom(input) {

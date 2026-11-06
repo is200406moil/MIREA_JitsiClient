@@ -8,7 +8,7 @@ Makefile*
 moc_*.cpp
 *.pro.user
 documentation.list
-/ru.vkr.JitsiAuroraPrototype
+/ru.mirea.JitsiClient
 /tests/jitsi-*
 *.qm
 *.moc

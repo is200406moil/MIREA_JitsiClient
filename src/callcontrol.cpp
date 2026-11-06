@@ -12,9 +12,9 @@
 
 namespace {
 
-const QString Service = QStringLiteral("ru.vkr.JitsiAuroraPrototype");
+const QString Service = QStringLiteral("ru.mirea.JitsiClient");
 const QString Path = QStringLiteral("/call");
-const QString Interface = QStringLiteral("ru.vkr.JitsiAuroraPrototype.Call");
+const QString Interface = QStringLiteral("ru.mirea.JitsiClient.Call");
 const QString NotificationsService = QStringLiteral("org.freedesktop.Notifications");
 const QString NotificationsPath = QStringLiteral("/org/freedesktop/Notifications");
 // The notification lives this long unless renewed while the meeting is on.
@@ -161,7 +161,7 @@ void CallControl::publish()
                                                           NotificationsService, QStringLiteral("Notify"));
     // An existing notification is updated in place; a removed one is replaced
     // by a new one.
-    message << QStringLiteral("Jitsi Meet") << m_id << QStringLiteral("ru.vkr.JitsiAuroraPrototype")
+    message << QStringLiteral("Jitsi Meet") << m_id << QStringLiteral("ru.mirea.JitsiClient")
             << m_summary << m_body << actions << hints << ExpireMs;
     const QDBusMessage reply = QDBusConnection::sessionBus().call(message);
     const uint id = reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty()

@@ -12,7 +12,7 @@ int main(int argc, char *argv[])
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
 
     // Private SDK adapter; a physical device keeps its normal camera backend.
-    const QByteArray privateLibs("/usr/share/ru.vkr.JitsiAuroraPrototype/lib");
+    const QByteArray privateLibs("/usr/share/ru.mirea.JitsiClient/lib");
     if (QFile::exists("/usr/lib64/gstreamer-1.0/libgstemulatorcamsrc.so")
             && QFile::exists(QString::fromLatin1(privateLibs) + "/gstreamer-1.0/libgstemulatorprovider.so")) {
         QByteArray pluginPaths = privateLibs + "/gstreamer-1.0";
@@ -28,7 +28,7 @@ int main(int argc, char *argv[])
         // it depends on libvideopipe) are linked together in the cache.
         QByteArray pluginDir = privateLibs + "/streamcamera";
         const QString systemScreen = QStringLiteral("/usr/lib64/streamcamera/plugins/libstreamcamera-screengrab.so");
-        const QString links = QDir::homePath() + QStringLiteral("/.cache/ru.vkr/JitsiAuroraPrototype/streamcamera");
+        const QString links = QDir::homePath() + QStringLiteral("/.cache/ru.mirea/JitsiClient/streamcamera");
         if (QFile::exists(systemScreen) && QDir().mkpath(links)) {
             const QDir bundled(QString::fromLatin1(pluginDir));
             QStringList sources;
@@ -50,8 +50,8 @@ int main(int argc, char *argv[])
     Aurora::WebView::WebEngineContext::InitBrowser(argc, argv);
 
     QScopedPointer<QGuiApplication> application(Aurora::Application::application(argc, argv));
-    application->setOrganizationName(QStringLiteral("ru.vkr"));
-    application->setApplicationName(QStringLiteral("JitsiAuroraPrototype"));
+    application->setOrganizationName(QStringLiteral("ru.mirea"));
+    application->setApplicationName(QStringLiteral("JitsiClient"));
 
     AppState appState;
     ScreenCapture screenCapture;
@@ -72,7 +72,7 @@ int main(int argc, char *argv[])
     CallControl callControl;
     if (!callControl.registerOnBus()) appState.appendCallLog(QStringLiteral("notification actions are not available"));
     view->rootContext()->setContextProperty(QStringLiteral("callControl"), &callControl);
-    view->setSource(Aurora::Application::pathTo(QStringLiteral("qml/JitsiAuroraPrototype.qml")));
+    view->setSource(Aurora::Application::pathTo(QStringLiteral("qml/JitsiClient.qml")));
     view->show();
 
     return application->exec();

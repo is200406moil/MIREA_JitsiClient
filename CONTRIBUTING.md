@@ -2,7 +2,7 @@
 
 ## Reporting a problem
 
-Open an issue and include the Aurora OS version, the device or emulator, the Jitsi server, the steps to reproduce and the meeting log `~/.cache/ru.vkr/JitsiAuroraPrototype/call.log`. Remove passwords and tokens from the log first.
+Open an issue and include the Aurora OS version, the device or emulator, the Jitsi server, the steps to reproduce and the meeting log `~/.cache/ru.mirea/JitsiClient/call.log`. Remove passwords and tokens from the log first.
 
 ## Proposing a change
 

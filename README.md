@@ -50,7 +50,7 @@ Aurora OS 5.2. Tested on the emulator 5.2.1.200 x86_64. The aarch64 package buil
 
 General guide: [Aurora SDK](https://developer.auroraos.ru/doc/sdk). No additional modules or parameters are needed.
 
-In Aurora IDE, open `ru.vkr.JitsiAuroraPrototype.pro`, choose a target and build. From the command line:
+In Aurora IDE, open `ru.mirea.JitsiClient.pro`, choose a target and build. From the command line:
 
 ```bash
 sfdk config target=AuroraOS-5.2.1.200-aarch64

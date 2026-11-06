@@ -9,12 +9,12 @@
 // The ongoing meeting notification and its actions. The notification is
 // published on the freedesktop notifications service with the Nemo remote
 // action hints; tapping it or its buttons calls the slots below over the
-// session bus (service ru.vkr.JitsiAuroraPrototype, the application id, object /call), and
+// session bus (service ru.mirea.JitsiClient, the application id, object /call), and
 // the meeting page handles the signals.
 class CallControl : public QObject
 {
     Q_OBJECT
-    Q_CLASSINFO("D-Bus Interface", "ru.vkr.JitsiAuroraPrototype.Call")
+    Q_CLASSINFO("D-Bus Interface", "ru.mirea.JitsiClient.Call")
 public:
     explicit CallControl(QObject *parent = nullptr);
     // Registers the object; false when the bus refused it.
