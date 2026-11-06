@@ -116,7 +116,7 @@ A full description is in [doc/project_description.md](doc/project_description.md
 - **Files in chat.** Not implemented. The `fileSharing` feature exists only in the Jitsi web client and needs separate server setup.
 - **Launch.** On the emulator the application sometimes opens minimized, on its cover (1 time out of 3 in the check). The cause is not known.
 - **Recording and subtitles.** The buttons appear when the server enables them. They follow the Jitsi sources but have not been tested with a real Jibri or transcriber: the request reaches the test server and is refused, because it has neither service. Choosing a language, translated subtitles and recording sounds are not implemented.
-- **Calendar.** The tab exists, but events from the Aurora OS calendar are not read.
+- **Calendar.** The tab is always empty. Reading Aurora OS events needs the `Calendar` permission, and a package with it fails the validator and does not install.
 
 Test details are in [doc/testing.md](doc/testing.md) (in Russian).
 
