@@ -67,3 +67,10 @@ done
 %{_datadir}/%{name}
 %{_datadir}/applications/%{name}.desktop
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
+
+%changelog
+* Fri Nov 06 2026 Giyosidinov Ismoilkhodzha <is200406moil@gmail.com> 0.1-126
+- Confirm screen sharing in an application dialog
+- Keep saved logins when the key store does not answer
+- Keep stream keys in the secure store, per server
+- Show the connection indicator on participant tiles
