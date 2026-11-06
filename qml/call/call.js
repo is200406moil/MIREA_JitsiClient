@@ -252,6 +252,7 @@
         screenSharing: false,
         cameraTrackBeforeShare: null,
         avModeration: { audio: false, video: false },
+        connectionIndicators: new Map(),
         participantFilter: ''
     };
 
@@ -389,11 +390,15 @@
                 bottom.appendChild(pin);
             }
             if (bottom.childNodes.length) view.appendChild(bottom);
-            if (p.raisedHand) {
+            const connection = connectionIndicator(p);
+            if (p.raisedHand || connection) {
                 const top = el('div', 'top-indicators');
-                const hand = el('div', 'indicator hand');
-                hand.appendChild(icon('raise-hand', 'small'));
-                top.appendChild(hand);
+                if (connection) top.appendChild(connection);
+                if (p.raisedHand) {
+                    const hand = el('div', 'indicator hand');
+                    hand.appendChild(icon('raise-hand', 'small'));
+                    top.appendChild(hand);
+                }
                 view.appendChild(top);
             }
             if (options.name) view.appendChild(el('div', 'name', displayNameOf(p)));
@@ -496,7 +501,6 @@
         $('room-timer').hidden = !state.startedAt;
         $('insecure-label').hidden = !cfg.insecureRoomName;
         $('audio-only-label').hidden = !state.audioOnly;
-        $('connection-label').hidden = !state.joined || !(state.connectionPoor || state.connectionLost);
         $('live-label').hidden = !liveStreamRunning();
         $('live-label').classList.toggle('pending', state.liveStream.status === 'pending');
         // A visitor is not one of the meeting participants.
@@ -1417,7 +1421,7 @@
 
     let mediaBusy = false;
     const ASK_UNMUTE_MESSAGE = 'aurora-ask-unmute';
-    const POOR_CONNECTION_QUALITY = 33;
+    const INDICATOR_DISPLAY_THRESHOLD = 30;
 
     // The moderator asked this participant to speak (notify.hostAskedUnmute).
     function showAskedToUnmute() {
@@ -1425,25 +1429,45 @@
             actions: [{ label: t('notify.unmute'), onClick: toggleAudio }] });
     }
 
-    // The label and the warning of a bad connection. The quality has to stay
-    // low for two reports: it starts low while the bitrate ramps up.
-    function onLocalStats(stats) {
-        state.localStats = stats;
-        const quality = stats && stats.connectionQuality;
-        if (typeof quality !== 'number') return;
-        state.poorReports = quality <= POOR_CONNECTION_QUALITY ? (state.poorReports || 0) + 1 : 0;
-        const poor = state.poorReports >= 2;
-        if (poor === !!state.connectionPoor) return;
-        state.connectionPoor = poor;
-        if (poor) showPoorConnection();
-        render();
+    // AbstractConnectionIndicator: the indicator of a participant appears when
+    // the quality falls under the threshold and stays until it has been good
+    // for the auto hide time, so a stable connection shows nothing.
+    function onConnectionStats(id, stats) {
+        const percent = stats && stats.connectionQuality;
+        if (typeof percent !== 'number' || !id) return;
+        const entry = state.connectionIndicators.get(id) || {};
+        state.connectionIndicators.set(id, entry);
+        const wasShown = entry.show;
+        const before = connectionClass(entry.percent);
+        entry.percent = percent;
+        if (percent < INDICATOR_DISPLAY_THRESHOLD) {
+            clearTimeout(entry.timer);
+            entry.timer = undefined;
+            entry.show = true;
+        } else if (!entry.timer) {
+            const config = (state.serverConfig || {}).connectionIndicators || {};
+            entry.timer = setTimeout(() => { entry.show = false; render(); }, config.autoHideTimeout || 5000);
+        }
+        if (entry.show !== wasShown || (entry.show && connectionClass(percent) !== before)) render();
     }
 
-    function showPoorConnection() {
-        showNotification({ key: 'quality', type: 'warning', timeout: 10000,
-            title: `${t('connectionindicator.status')} ${t('connectionindicator.quality.poor')}`,
-            description: t('prejoin.connectionDetails.veryPoorConnection'),
-            onClick: () => openConnectionInfo(state.localId) });
+    // CONNECTOR_INDICATOR_COLORS of the native ConnectionIndicator.
+    function connectionClass(percent) {
+        if (percent >= INDICATOR_DISPLAY_THRESHOLD) return 'good';
+        return percent >= 10 ? 'nonoptimal' : 'poor';
+    }
+
+    function connectionIndicator(p) {
+        const config = (state.serverConfig || {}).connectionIndicators || {};
+        const entry = state.connectionIndicators.get(p.id);
+        if (config.disabled || !entry || !entry.show) return null;
+        const video = p.tracks.video;
+        const status = video && video.getTrackStreamingStatus && video.getTrackStreamingStatus();
+        if (status === 'inactive' && config.inactiveDisabled) return null;
+        const kind = status === 'inactive' ? 'inactive' : status === 'interrupted' ? 'lost' : connectionClass(entry.percent);
+        const node = el('div', `indicator connection ${kind}`);
+        node.appendChild(icon('connection', 'small'));
+        return node;
     }
 
     async function toggleAudio() {
@@ -3595,8 +3619,8 @@
         });
         on(C.BREAKOUT_ROOMS_MOVE_TO_ROOM, roomId => moveToRoom(roomId));
         const Q = JitsiMeetJS.events.connectionQuality;
-        on(Q.LOCAL_STATS_UPDATED, onLocalStats);
-        on(Q.REMOTE_STATS_UPDATED, (id, stats) => { state.remoteStats.set(id, stats); });
+        on(Q.LOCAL_STATS_UPDATED, stats => { state.localStats = stats; onConnectionStats(state.localId, stats); });
+        on(Q.REMOTE_STATS_UPDATED, (id, stats) => { state.remoteStats.set(id, stats); onConnectionStats(id, stats); });
         on(C.METADATA_UPDATED, metadata => {
             onMetadataUpdated(metadata);
             if (state.screen === 'chat') updateChatInput();
@@ -3620,8 +3644,6 @@
         on(C.AV_MODERATION_CHANGED, ({ enabled, mediaType }) => {
             if (mediaType === 'audio' || mediaType === 'video') state.avModeration[mediaType] = !!enabled;
         });
-        on(C.CONNECTION_INTERRUPTED, () => { state.connectionLost = true; render(); });
-        on(C.CONNECTION_RESTORED, () => { state.connectionLost = false; render(); });
         on(C.CONNECTION_INTERRUPTED, () => showNotification({ key: 'connection', type: 'warning',
             title: t('dialog.conferenceDisconnectTitle'), description: t('notify.disconnected'), timeout: 10000 }));
         on(C.CONNECTION_RESTORED, () => {
@@ -4007,7 +4029,6 @@
         }));
         $('poll-create').addEventListener('click', openPollCreate);
         $('insecure-label').addEventListener('click', event => { event.stopPropagation(); showExpandedLabel('insecure'); });
-        $('connection-label').addEventListener('click', () => openConnectionInfo(state.localId));
         $('audio-only-label').addEventListener('click', event => { event.stopPropagation(); showExpandedLabel('audio-only'); });
         $('live-label').addEventListener('click', event => { event.stopPropagation(); showExpandedLabel('live'); });
         $('stream-start').addEventListener('click', startLiveStream);
