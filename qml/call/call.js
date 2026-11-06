@@ -496,6 +496,7 @@
         $('room-timer').hidden = !state.startedAt;
         $('insecure-label').hidden = !cfg.insecureRoomName;
         $('audio-only-label').hidden = !state.audioOnly;
+        $('connection-label').hidden = !state.joined || !(state.connectionPoor || state.connectionLost);
         $('live-label').hidden = !liveStreamRunning();
         $('live-label').classList.toggle('pending', state.liveStream.status === 'pending');
         // A visitor is not one of the meeting participants.
@@ -996,10 +997,17 @@
         const videoMuted = !p.tracks.video || p.tracks.video.isMuted();
         openSheet(sheet => {
             sheetHeader(sheet, p);
-            // AskUnmuteButton: under audio moderation, let the participant speak.
-            if (moderator && state.avModeration && state.avModeration.audio && audioMuted
-                    && typeof state.conference.avModerationApprove === 'function') {
-                sheetItem(sheet, 'mic', t('participantsPane.actions.askUnmute'), () => state.conference.avModerationApprove('audio', p.id));
+            // AskUnmuteButton: under audio moderation it lets the participant
+            // speak, as in jitsi-meet. Without moderation jitsi-meet has no such
+            // request; clients of this application understand the message.
+            if (moderator && audioMuted) {
+                sheetItem(sheet, 'mic', t('participantsPane.actions.askUnmute'), () => {
+                    if (state.avModeration && state.avModeration.audio && typeof state.conference.avModerationApprove === 'function') {
+                        state.conference.avModerationApprove('audio', p.id);
+                    } else {
+                        state.conference.sendEndpointMessage(p.id, { name: ASK_UNMUTE_MESSAGE });
+                    }
+                });
             }
             if (remoteMute) {
                 sheetItem(sheet, 'mic-slash', t(audioMuted ? 'videothumbnail.muted' : 'videothumbnail.domute'), () => confirmDialog({
@@ -1408,6 +1416,35 @@
     }
 
     let mediaBusy = false;
+    const ASK_UNMUTE_MESSAGE = 'aurora-ask-unmute';
+    const POOR_CONNECTION_QUALITY = 33;
+
+    // The moderator asked this participant to speak (notify.hostAskedUnmute).
+    function showAskedToUnmute() {
+        showNotification({ key: 'ask-unmute', type: 'normal', title: t('notify.hostAskedUnmute'), timeout: 15000,
+            actions: [{ label: t('notify.unmute'), onClick: toggleAudio }] });
+    }
+
+    // The label and the warning of a bad connection. The quality has to stay
+    // low for two reports: it starts low while the bitrate ramps up.
+    function onLocalStats(stats) {
+        state.localStats = stats;
+        const quality = stats && stats.connectionQuality;
+        if (typeof quality !== 'number') return;
+        state.poorReports = quality <= POOR_CONNECTION_QUALITY ? (state.poorReports || 0) + 1 : 0;
+        const poor = state.poorReports >= 2;
+        if (poor === !!state.connectionPoor) return;
+        state.connectionPoor = poor;
+        if (poor) showPoorConnection();
+        render();
+    }
+
+    function showPoorConnection() {
+        showNotification({ key: 'quality', type: 'warning', timeout: 10000,
+            title: `${t('connectionindicator.status')} ${t('connectionindicator.quality.poor')}`,
+            description: t('prejoin.connectionDetails.veryPoorConnection'),
+            onClick: () => openConnectionInfo(state.localId) });
+    }
 
     async function toggleAudio() {
         if (mediaBusy) return;
@@ -3502,6 +3539,10 @@
             if (payload && payload.name === 'endpoint-reaction' && Array.isArray(payload.reactions)) {
                 payload.reactions.forEach(showReaction);
             }
+            if (payload && payload.name === ASK_UNMUTE_MESSAGE && participant && participant.isModerator && participant.isModerator()
+                    && state.audioMuted) {
+                showAskedToUnmute();
+            }
             if (payload && payload.name === LOWER_HAND_MESSAGE && participant && participant.isModerator && participant.isModerator()
                     && state.local.raisedHand && !(state.serverConfig && state.serverConfig.disableLowerHandByModerator)) {
                 toggleRaiseHand();
@@ -3554,7 +3595,7 @@
         });
         on(C.BREAKOUT_ROOMS_MOVE_TO_ROOM, roomId => moveToRoom(roomId));
         const Q = JitsiMeetJS.events.connectionQuality;
-        on(Q.LOCAL_STATS_UPDATED, stats => { state.localStats = stats; });
+        on(Q.LOCAL_STATS_UPDATED, onLocalStats);
         on(Q.REMOTE_STATS_UPDATED, (id, stats) => { state.remoteStats.set(id, stats); });
         on(C.METADATA_UPDATED, metadata => {
             onMetadataUpdated(metadata);
@@ -3573,9 +3614,14 @@
                 if (state.screen === 'participants') renderParticipants();
             }
         });
+        on(C.AV_MODERATION_APPROVED, ({ mediaType }) => {
+            if (mediaType === 'audio' && state.audioMuted) showAskedToUnmute();
+        });
         on(C.AV_MODERATION_CHANGED, ({ enabled, mediaType }) => {
             if (mediaType === 'audio' || mediaType === 'video') state.avModeration[mediaType] = !!enabled;
         });
+        on(C.CONNECTION_INTERRUPTED, () => { state.connectionLost = true; render(); });
+        on(C.CONNECTION_RESTORED, () => { state.connectionLost = false; render(); });
         on(C.CONNECTION_INTERRUPTED, () => showNotification({ key: 'connection', type: 'warning',
             title: t('dialog.conferenceDisconnectTitle'), description: t('notify.disconnected'), timeout: 10000 }));
         on(C.CONNECTION_RESTORED, () => {
@@ -3961,6 +4007,7 @@
         }));
         $('poll-create').addEventListener('click', openPollCreate);
         $('insecure-label').addEventListener('click', event => { event.stopPropagation(); showExpandedLabel('insecure'); });
+        $('connection-label').addEventListener('click', () => openConnectionInfo(state.localId));
         $('audio-only-label').addEventListener('click', event => { event.stopPropagation(); showExpandedLabel('audio-only'); });
         $('live-label').addEventListener('click', event => { event.stopPropagation(); showExpandedLabel('live'); });
         $('stream-start').addEventListener('click', startLiveStream);

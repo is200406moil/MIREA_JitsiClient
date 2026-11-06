@@ -1,7 +1,7 @@
 Name:       ru.vkr.JitsiAuroraPrototype
 Summary:    Клиент видеоконференций Jitsi Meet для Авроры
 Version:    0.1
-Release:    121
+Release:    122
 License:    BSD-3-Clause
 URL:        https://auroraos.ru
 Source0:    %{name}-%{version}.tar.bz2

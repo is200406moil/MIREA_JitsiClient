@@ -776,7 +776,7 @@
         "focusFail": "{{component}} недоступен, повторите через {{ms}} с",
         "gifsMenu": "GIPHY",
         "groupTitle": "Уведомления",
-        "hostAskedUnmute": "Модератор хочет, чтобы вы высказалисьМодератор хочет, чтобы вы высказались",
+        "hostAskedUnmute": "Модератор хочет, чтобы вы высказались",
         "invalidTenant": "Некорректный тенант",
         "invalidTenantHyphenDescription": "Используемый тенант некорректен: он начинается или заканчивается дефисом.",
         "invalidTenantLengthDescription": "Используемый тенант слишком длинный.",
