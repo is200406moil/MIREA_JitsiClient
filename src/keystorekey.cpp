@@ -29,15 +29,15 @@ QString tokenModule()
 // while the key store call waits.
 class KeystoreAnswers : public QObject
 {
-    Q_OBJECT
 public:
     void start()
     {
-        connect(&m_handler, &QCA::EventHandler::eventReady, this, &KeystoreAnswers::answer);
+        connect(&m_handler, &QCA::EventHandler::eventReady, this,
+                [this](int id, const QCA::Event &event) { answer(id, event); });
         m_handler.start();
     }
 
-private slots:
+private:
     void answer(int id, const QCA::Event &event)
     {
         switch (event.type()) {
@@ -51,7 +51,6 @@ private slots:
         }
     }
 
-private:
     QCA::EventHandler m_handler;
 };
 
@@ -156,5 +155,3 @@ QString keystoreContainerPassword(QString *error)
     if (answers->wait(5000)) delete answers;
     return password;
 }
-
-#include "keystorekey.moc"
