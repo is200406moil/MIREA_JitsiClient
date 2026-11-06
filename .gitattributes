@@ -1,0 +1,5 @@
+# The build engine is Linux: a .desktop file or a spec with CRLF fails validation.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.rpm binary
