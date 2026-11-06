@@ -12,3 +12,4 @@ documentation.list
 /tests/jitsi-*
 *.qm
 *.moc
+tests/.build/
