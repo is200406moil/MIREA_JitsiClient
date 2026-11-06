@@ -253,7 +253,7 @@ SilicaFlickable {
         Repeater {
             // Version of the application and of the Aurora OS SDK it is built with.
             model: [
-                { label: "settingsView.version", value: "0.1 build 131" },
+                { label: "settingsView.version", value: "0.1 build 132" },
                 { label: "settingsView.sdkVersion", value: "5.2.1.200" }
             ]
             delegate: Item {

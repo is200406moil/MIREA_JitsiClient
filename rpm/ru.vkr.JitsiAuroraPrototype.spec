@@ -1,7 +1,7 @@
 Name:       ru.vkr.JitsiAuroraPrototype
 Summary:    Клиент видеоконференций Jitsi Meet для Авроры
 Version:    0.1
-Release:    131
+Release:    132
 License:    BSD-3-Clause
 URL:        https://auroraos.ru
 Source0:    %{name}-%{version}.tar.bz2
@@ -69,22 +69,25 @@ done
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
 
 %changelog
-* Fri Nov 06 2026 Giyosidinov Ismoilkhodzha <is200406moil@gmail.com> 0.1-131
+* Fri Nov 06 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-132
+- Correct the author name
+
+* Fri Nov 06 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-131
 - Show the filmstrip of a one to one meeting like the mobile client and allow pinning yourself
 
-* Fri Nov 06 2026 Giyosidinov Ismoilkhodzha <is200406moil@gmail.com> 0.1-130
+* Fri Nov 06 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-130
 - Show the reason when the server refuses recording
 
-* Fri Nov 06 2026 Giyosidinov Ismoilkhodzha <is200406moil@gmail.com> 0.1-129
+* Fri Nov 06 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-129
 - Show audio level rings around the avatar of the speaker
 
-* Fri Nov 06 2026 Giyosidinov Ismoilkhodzha <is200406moil@gmail.com> 0.1-128
+* Fri Nov 06 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-128
 - Add file recording and a subtitles tab in the chat screen
 
-* Fri Nov 06 2026 Giyosidinov Ismoilkhodzha <is200406moil@gmail.com> 0.1-127
+* Fri Nov 06 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-127
 - Remove the Pictures, UserDirs and Audio permissions
 
-* Fri Nov 06 2026 Giyosidinov Ismoilkhodzha <is200406moil@gmail.com> 0.1-126
+* Fri Nov 06 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-126
 - Confirm screen sharing in an application dialog
 - Keep saved logins when the key store does not answer
 - Keep stream keys in the secure store, per server
