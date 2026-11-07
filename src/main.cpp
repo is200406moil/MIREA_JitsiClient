@@ -69,6 +69,7 @@ int main(int argc, char *argv[])
     QObject::connect(&appState, &AppState::interfaceLanguageChanged, application.data(), applyLanguage);
     QScopedPointer<QQuickView> view(Aurora::Application::createView());
     view->rootContext()->setContextProperty(QStringLiteral("appState"), &appState);
+    view->rootContext()->setContextProperty(QStringLiteral("appVersion"), QStringLiteral(APP_VERSION " build " APP_RELEASE));
     CallControl callControl;
     if (!callControl.registerOnBus()) appState.appendCallLog(QStringLiteral("notification actions are not available"));
     view->rootContext()->setContextProperty(QStringLiteral("callControl"), &callControl);

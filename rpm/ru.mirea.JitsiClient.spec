@@ -1,7 +1,7 @@
 Name:       ru.mirea.JitsiClient
 Summary:    Клиент видеоконференций Jitsi Meet для Авроры
 Version:    0.1
-Release:    134
+Release:    135
 License:    BSD-3-Clause
 URL:        https://auroraos.ru
 Source0:    %{name}-%{version}.tar.bz2
@@ -41,7 +41,7 @@ BuildRequires:  streamcamera-gstreamer-codec-plugin
 %autosetup
 
 %build
-%qmake5
+%qmake5 VERSION=%{version} RELEASE=%{release}
 %make_build
 
 %install

@@ -2,6 +2,11 @@ TARGET = ru.mirea.JitsiClient
 
 QT += network dbus sql
 
+# The version shown in the settings comes from the package (rpm/*.spec).
+isEmpty(VERSION): VERSION = 0.1
+isEmpty(RELEASE): RELEASE = 0
+DEFINES += APP_VERSION=\\\"$$VERSION\\\" APP_RELEASE=\\\"$$RELEASE\\\"
+
 CONFIG += \
     auroraapp
 
