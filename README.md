@@ -65,6 +65,18 @@ sfdk check RPMS/<package>.rpm
 
 ## Installation and launch
 
+Ready packages of the latest version are in [packages](packages):
+
+| Package | For |
+|---|---|
+| `ru.mirea.JitsiClient-0.1-133.aarch64.rpm` | 64-bit devices |
+| `ru.mirea.JitsiClient-0.1-133.armv7hl.rpm` | 32-bit devices |
+| `ru.mirea.JitsiClient-0.1-133.x86_64.rpm` | Aurora OS emulator |
+
+They are signed with the SDK development key, so they install on a device or emulator in developer mode. The packages are built for Aurora OS 5.2 and have not been tested on Aurora OS 5.1.
+
+To install a package of your own build:
+
 1. Sign the package. For development, use the SDK key:
 
    ```bash

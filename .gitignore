@@ -14,3 +14,4 @@ documentation.list
 *.moc
 tests/.build/
 tests/.build-ks/
+!packages/*.rpm
