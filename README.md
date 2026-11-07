@@ -36,11 +36,11 @@ A Jitsi Meet video conferencing client for smartphones running Aurora OS 5. The 
 - **Meeting.** Camera, microphone, camera switching, tile view, chat and private messages, polls, reactions, GIFs (GIPHY), raised hand, whiteboard, shared YouTube video, speaker statistics, audio-only mode, recording and subtitles on servers that have them. Audio level rings appear around the avatar of the speaker on the main view. A connection indicator appears on the tile of a participant with a poor connection, red or yellow, and disappears when the connection is stable again.
 - **Moderation.** Actions on participants, mute everyone with audio moderation, lobby, room password, breakout rooms, visitors, chat restrictions, follow me.
 - **Live streaming** to YouTube by stream key.
-- **Protected servers.** A login and password (Prosody) or an organizer token (JWT). They are kept in an encrypted container, and the next meetings open without asking again.
+- **Protected servers.** A login and password (Prosody) or an organizer token (JWT). They are kept in a file encrypted with a key from Aurora Keystore, and the next meetings open without asking again.
 - **Background work.** A meeting continues with the screen locked or the application minimized. A notification offers microphone and leave buttons, and the cover shows the meeting time and the same actions.
 - **Settings.** Server, language (Russian, English), sounds, notifications, initial camera and microphone state, moderator section, build information.
 
-The screens outside a meeting are written in QML (Silica). The meeting screen is the application's own client on lib-jitsi-meet in a WebView. C++ code keeps rooms and settings in SQLite, stores logins through `sstore` and Aurora Keystore, and publishes the meeting notification. See [doc/architecture.md](doc/architecture.md) (in Russian).
+The screens outside a meeting are written in QML (Silica). The meeting screen is the application's own client on lib-jitsi-meet in a WebView. C++ code keeps rooms and settings in SQLite, stores logins encrypted with a key from Aurora Keystore, and publishes the meeting notification. See [doc/architecture.md](doc/architecture.md) (in Russian).
 
 ## Compatibility
 
@@ -87,7 +87,7 @@ To install a package of your own build:
 
 A Jitsi Meet server is required. The default is `https://meet.jit.si`, and the address can be changed in the settings.
 
-On the emulator, `sstore` has to be installed for saved logins (`pkcon install sstore`), and the camera has to be started in Aurora IDE: Tools → Aurora OS → Emulation management → Camera.
+On the emulator, the camera has to be started in Aurora IDE: Tools → Aurora OS → Emulation management → Camera.
 
 ## Screenshots
 
@@ -118,7 +118,7 @@ A full description is in [doc/project_description.md](doc/project_description.md
 
 - **No device testing yet.** The application has been tested on the emulator only.
 - **Screen sharing.** Implemented through StreamCamera but not confirmed: on the emulator, capture starts and no frames arrive.
-- **Aurora Keystore.** It is unavailable on a regular emulator, where a fallback key file is used. Work with the store has been tested on the emulator with SoftHSM, bypassing the system CUSE layer. The regular path and TEE have to be tested on a device.
+- **Aurora Keystore.** It is unavailable on a regular emulator, so there logins are kept only until the application closes. Work with the store has been tested on the emulator with SoftHSM, bypassing the system CUSE layer. The regular path and TEE have to be tested on a device.
 - **Rejoining.** Without restarting the application, `gum.not_found` for audio sometimes appears. The cause is not known.
 - **Camera preview on the emulator.** The Qt Multimedia render thread sometimes crashes on the screen before joining (`QVideoFrame::unmap`).
 - **Own connection indicator on the emulator.** With the camera on, it stays yellow without any packet loss, because the quality estimate stays low there.

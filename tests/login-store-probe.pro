@@ -1,0 +1,9 @@
+TEMPLATE = app
+TARGET = login-store-probe
+QT = core network sql
+CONFIG += console c++11 link_pkgconfig
+CONFIG -= app_bundle
+PKGCONFIG += qca2-qt5
+INCLUDEPATH += ../src
+SOURCES += login-store-probe.cpp ../src/keystoreloginstore.cpp ../src/keystorekey.cpp
+HEADERS += ../src/keystoreloginstore.h ../src/keystorekey.h

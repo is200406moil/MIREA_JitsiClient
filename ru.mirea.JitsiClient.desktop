@@ -7,7 +7,7 @@ Name=Jitsi Meet
 Name[ru]=Jitsi Meet
 
 [X-Application]
-Permissions=SecureStorage;Camera;Internet;Microphone;WebView;DeviceInfo;ScreenCapture
+Permissions=Camera;Internet;Microphone;WebView;DeviceInfo;ScreenCapture
 OrganizationName=ru.mirea
 ApplicationName=JitsiClient
 ExecDBus=/usr/bin/ru.mirea.JitsiClient

@@ -9,7 +9,7 @@ class QSettings;
 
 // The application's local SQLite database: settings and the profile in the
 // settings table, saved rooms in the rooms table. Logins and tokens are not
-// kept here (see ContainerLoginStore).
+// kept here (see KeystoreLoginStore).
 //
 // Settings are read from memory and written through to the file, so a failed
 // database still leaves a working session. Data of versions that kept

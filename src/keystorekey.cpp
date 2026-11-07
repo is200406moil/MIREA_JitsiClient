@@ -14,7 +14,6 @@ const int KeySize = 48;
 // The PIN of the USERAPP token, as in the Aurora OS Keystore example: the
 // token is already bound to this application and this user.
 const char TokenPin[] = "0000";
-const char Message[] = "ru.mirea.JitsiClient/logins-container";
 const unsigned long TimeoutMs = 30000;
 
 // The token module: TEE on devices that have it, SoftHSM on the others and
@@ -44,7 +43,7 @@ private:
         case QCA::Event::Password: m_handler.submitPassword(id, QCA::SecureArray(TokenPin)); break;
         case QCA::Event::KeyStoreId: m_handler.submitKeyStoreId(id, StoreId); break;
         case QCA::Event::KeyStoreName: m_handler.submitKeyStoreName(id, StoreId); break;
-        case QCA::Event::KeyStoreEntryName: m_handler.submitKeyStoreEntryName(id, QStringLiteral("logins-container")); break;
+        case QCA::Event::KeyStoreEntryName: m_handler.submitKeyStoreEntryName(id, QStringLiteral("logins")); break;
         case QCA::Event::KeyStorePkcs11Provider: m_handler.submitKeyStorePkcs11Provider(id, tokenModule()); break;
         case QCA::Event::KeyType: m_handler.submitKeyType(id, KeyType); break;
         default: m_handler.reject(id); break;
@@ -78,7 +77,8 @@ QCA::SymmetricKey storedKey(QCA::KeyStore &store)
 class WorkThread : public QThread
 {
 public:
-    QString password;
+    QByteArray message;
+    QByteArray secret;
     QString error;
 
 protected:
@@ -123,35 +123,36 @@ protected:
         }
         QCA::MessageAuthenticationCode mac(QStringLiteral("hmac(sha256)"), QCA::SecureArray(), QString::fromLatin1(ProviderName));
         mac.setup(key);
-        mac.update(QCA::MemoryRegion(QByteArray(Message)));
+        mac.update(QCA::MemoryRegion(message));
         const QByteArray digest = mac.final().toByteArray();
         if (digest.size() != 32) {
             error = QStringLiteral("the key store gave no result");
             return;
         }
-        password = QString::fromLatin1(digest.toHex());
+        secret = digest;
     }
 };
 
 } // namespace
 
-QString keystoreContainerPassword(QString *error)
+QByteArray keystoreSecret(const QByteArray &message, QString *error)
 {
     static QCA::Initializer initializer;
     // On the heap: a call stuck in the key store cannot be cancelled, then
     // the threads stay until the process ends.
     AnswersThread *answers = new AnswersThread;
     WorkThread *work = new WorkThread;
+    work->message = message;
     answers->start();
     work->start();
     if (!work->wait(TimeoutMs)) {
         if (error) *error = QStringLiteral("the key store did not answer");
-        return QString();
+        return QByteArray();
     }
-    const QString password = work->password;
+    const QByteArray secret = work->secret;
     if (error) *error = work->error;
     delete work;
     answers->quit();
     if (answers->wait(5000)) delete answers;
-    return password;
+    return secret;
 }

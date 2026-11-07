@@ -28,7 +28,7 @@ SOURCES += \
     src/main.cpp \
     src/appstate.cpp \
     src/callcontrol.cpp \
-    src/containerloginstore.cpp \
+    src/keystoreloginstore.cpp \
     src/keystorekey.cpp \
     src/screencapture.cpp \
     src/storage.cpp
@@ -37,7 +37,7 @@ HEADERS += \
     src/appstate.h \
     src/callcontrol.h \
     src/clienttranslator.h \
-    src/containerloginstore.h \
+    src/keystoreloginstore.h \
     src/keystorekey.h \
     src/screencapture.h \
     src/storage.h

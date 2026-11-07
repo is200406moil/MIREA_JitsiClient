@@ -4,7 +4,7 @@
 #include "appstate.h"
 #include "clienttranslator.h"
 #include "screencapture.h"
-#include "containerloginstore.h"
+#include "keystoreloginstore.h"
 #include "callcontrol.h"
 
 int main(int argc, char *argv[])
@@ -57,9 +57,9 @@ int main(int argc, char *argv[])
     ScreenCapture screenCapture;
     appState.setScreenFrameSource(&screenCapture);
     QObject::connect(&screenCapture, &ScreenCapture::message, &appState, &AppState::appendCallLog, Qt::QueuedConnection);
-    ContainerLoginStore loginStore;
+    KeystoreLoginStore loginStore;
     appState.setLoginStore(&loginStore);
-    QObject::connect(&loginStore, &ContainerLoginStore::message, &appState, &AppState::appendCallLog);
+    QObject::connect(&loginStore, &KeystoreLoginStore::message, &appState, &AppState::appendCallLog);
     ClientTranslator english(Aurora::Application::pathTo("qml/languages/en.json").toLocalFile());
     auto applyLanguage = [&]() {
         application->removeTranslator(&english);
