@@ -69,9 +69,9 @@ Ready packages of the latest version are in [packages](packages):
 
 | Package | For |
 |---|---|
-| `ru.mirea.JitsiClient-0.1-134.aarch64.rpm` | 64-bit devices |
-| `ru.mirea.JitsiClient-0.1-134.armv7hl.rpm` | 32-bit devices |
-| `ru.mirea.JitsiClient-0.1-134.x86_64.rpm` | Aurora OS emulator |
+| `ru.mirea.JitsiClient-0.1-135.aarch64.rpm` | 64-bit devices |
+| `ru.mirea.JitsiClient-0.1-135.armv7hl.rpm` | 32-bit devices |
+| `ru.mirea.JitsiClient-0.1-135.x86_64.rpm` | Aurora OS emulator |
 
 They are signed with the SDK development key, so they install on a device or emulator in developer mode. The packages are built for Aurora OS 5.2 and have not been tested on Aurora OS 5.1.
 
