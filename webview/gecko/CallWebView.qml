@@ -16,8 +16,11 @@ RawWebView {
         view.runJavaScript(code)
     }
 
-    // The meeting goes on with the application in the background.
-    active: true
+    // False while another page (organizer sign-in, whiteboard, help) is on
+    // top: Gecko draws only the active view. The meeting goes on either way,
+    // also with the application in the background.
+    property bool shown: true
+    active: shown
 
     Component.onCompleted: view.addMessageListener("embed:webrtcrequest")
 

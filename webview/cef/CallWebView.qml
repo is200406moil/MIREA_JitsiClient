@@ -10,6 +10,9 @@ WebView {
 
     signal loadFailed()
 
+    // Used by the Gecko variant only (see webview/gecko/CallWebView.qml).
+    property bool shown: true
+
     function runJs(code) {
         view.runJavaScript(code, function(result) {}, function(error) {})
     }

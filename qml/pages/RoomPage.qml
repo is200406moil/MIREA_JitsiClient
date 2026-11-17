@@ -221,6 +221,7 @@ Page {
         id: webView
         anchors.fill: parent
         url: appState.meetingUrl
+        shown: page.status === PageStatus.Active || page.status === PageStatus.Activating
         onLoadFailed: page.close()
     }
 }
