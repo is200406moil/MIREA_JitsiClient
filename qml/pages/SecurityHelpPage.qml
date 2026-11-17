@@ -1,7 +1,7 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
-import ru.auroraos.WebView 1.0
 import "../components"
+import "../webview"
 
 // A Jitsi web page (security recommendations, help, terms, privacy) opened
 // inside the application, since Aurora may have no browser installed.
@@ -18,10 +18,8 @@ Page {
         closeIcon: true
         onBackClicked: pageStack.pop()
     }
-    WebView {
+    AppWebView {
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
         url: page.address
-        TouchInput { enabled: true }
-        KeyboardInput { enabled: true }
     }
 }

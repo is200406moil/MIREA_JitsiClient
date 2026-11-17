@@ -1,7 +1,7 @@
 import QtQuick 2.6
 import Sailfish.Silica 1.0
-import ru.auroraos.WebView 1.0
 import "../components"
+import "../webview"
 
 // The Jitsi whiteboard: the server's static/whiteboard.html opened with the
 // collaboration session of the meeting, as the mobile client does.
@@ -24,10 +24,8 @@ Page {
         onBackClicked: pageStack.pop()
     }
 
-    WebView {
+    AppWebView {
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
         url: page.address
-        TouchInput { enabled: true }
-        KeyboardInput { enabled: true }
     }
 }

@@ -2,9 +2,8 @@ import QtQuick 2.6
 import Sailfish.Silica 1.0
 import Sailfish.Share 1.0
 import Nemo.KeepAlive 1.2
-import ru.auroraos.WebView 1.0
-import ru.auroraos.WebView.Global 1.0
 import "../components"
+import "../webview"
 
 // Hosts the call screen (qml/call), which is a lib-jitsi-meet client served
 // by AppState on 127.0.0.1. This page only provides system integration:
@@ -98,7 +97,7 @@ Page {
     }
 
     function callJs(code) {
-        webView.runJavaScript("window.auroraCall && " + code, function(result) {}, function(error) {})
+        webView.runJs("window.auroraCall && " + code)
     }
 
     Component.onDestruction: {
@@ -108,28 +107,6 @@ Page {
         removeNotifications()
         appState.finishMeeting()
         if (previousPage) previousPage.resetPreview()
-    }
-
-    Connections {
-        target: PermissionHandler
-        onMediaAccessRequested: {
-            var trusted = appState.isTrustedOrigin(mediaAccessRequest.requestingOrigin)
-            // Kept in the call log to see what the WebView asks for screen capture.
-            appState.appendCallLog("media access " + JSON.stringify(mediaAccessRequest.requestedPermissions)
-                                   + (trusted ? " accepted" : " denied"))
-            if (trusted) mediaAccessRequest.accept()
-            else mediaAccessRequest.deny()
-        }
-        onPermissionsRequested: {
-            var allowed = appState.isTrustedOrigin(permissionRequest.requestingOrigin)
-            var permissions = permissionRequest.requestedPermissions
-            for (var i = 0; i < permissions.length; i++) {
-                if (permissions[i] !== Permissions.CEF_PERMISSION_TYPE_CAMERA_STREAM
-                        && permissions[i] !== Permissions.CEF_PERMISSION_TYPE_MIC_STREAM) allowed = false
-            }
-            if (allowed) permissionRequest.accept()
-            else permissionRequest.deny()
-        }
     }
 
     Connections {
@@ -147,7 +124,7 @@ Page {
                 pageStack.push(Qt.resolvedUrl("SecurityHelpPage.qml"), {address: data.url})
                 break
             case "authRequired":
-                pageStack.push(Qt.resolvedUrl("OrganizerLoginPage.qml"), {
+                pageStack.push(Qt.resolvedUrl("../webview/OrganizerLoginPage.qml"), {
                     address: data.url, serverAddress: page.serverAddress, roomPage: page
                 })
                 break
@@ -240,14 +217,10 @@ Page {
 
     Rectangle { anchors.fill: parent; color: "#040404" }
 
-    WebView {
+    CallWebView {
         id: webView
         anchors.fill: parent
         url: appState.meetingUrl
-        TouchInput { enabled: true }
-        KeyboardInput { enabled: true }
-        onLoadError: {
-            if (errorCode !== -3) page.close()
-        }
+        onLoadFailed: page.close()
     }
 }

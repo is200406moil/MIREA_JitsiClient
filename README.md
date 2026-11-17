@@ -44,7 +44,12 @@ The screens outside a meeting are written in QML (Silica). The meeting screen is
 
 ## Compatibility
 
-Aurora OS 5.2. Tested on the emulator 5.2.1.200 x86_64. The aarch64 package builds and passes the validator, but it has not been run on a device yet.
+Aurora OS 5.2 and Aurora OS 5.1.
+
+- **Aurora OS 5.2** uses the Chromium based Aurora WebView. Tested on the emulator 5.2.1.200 x86_64.
+- **Aurora OS 5.1** has only the Gecko based Sailfish WebView (Gecko 78). The same code builds a separate package for it (`webview/gecko`). Tested on the emulator 5.1.1.60 x86_64: joining a meeting, a meeting of two, the microphone. lib-jitsi-meet officially supports Firefox 91 and later, so some features may behave differently on Gecko 78.
+
+The packages for devices build and pass the validator, but they have not been run on a device yet.
 
 ## Build
 
@@ -57,7 +62,7 @@ sfdk config target=AuroraOS-5.2.1.200-aarch64
 sfdk build
 ```
 
-The package appears in `RPMS/`. Use the target `AuroraOS-5.2.1.200-x86_64` for the emulator. To check the package with the validator:
+The package appears in `RPMS/`. Use the target `AuroraOS-5.2.1.200-x86_64` for the emulator. For Aurora OS 5.1 build with Aurora SDK 5.1 and its targets (`AuroraOS-5.1.1.60-base-aarch64` and others): the spec file reads the OS version of the target and builds the Gecko variant. To check the package with the validator:
 
 ```bash
 sfdk check RPMS/<package>.rpm
@@ -73,7 +78,15 @@ Ready packages of the latest version are in [packages](packages):
 | `ru.mirea.JitsiClient-0.1-135.armv7hl.rpm` | 32-bit devices |
 | `ru.mirea.JitsiClient-0.1-135.x86_64.rpm` | Aurora OS emulator |
 
-They are signed with the SDK development key, so they install on a device or emulator in developer mode. The packages are built for Aurora OS 5.2 and have not been tested on Aurora OS 5.1.
+These packages are for Aurora OS 5.2. Packages for Aurora OS 5.1 are in [packages/aurora-5.1](packages/aurora-5.1):
+
+| Package | For |
+|---|---|
+| `ru.mirea.JitsiClient-0.1-142.aarch64.rpm` | 64-bit devices with Aurora OS 5.1 |
+| `ru.mirea.JitsiClient-0.1-142.armv7hl.rpm` | 32-bit devices with Aurora OS 5.1 |
+| `ru.mirea.JitsiClient-0.1-142.x86_64.rpm` | Aurora OS 5.1 emulator |
+
+They are signed with the SDK development key, so they install on a device or emulator in developer mode.
 
 To install a package of your own build:
 

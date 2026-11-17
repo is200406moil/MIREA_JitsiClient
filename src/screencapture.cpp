@@ -5,6 +5,25 @@
 #include <QImage>
 #include <QMutexLocker>
 
+namespace {
+
+// StreamCamera of Aurora OS 5.1 (1.4) has no RGB frames and no toString().
+#ifdef APP_GECKO_WEBVIEW
+const Aurora::StreamCamera::PixelFormat RgbFormat = Aurora::StreamCamera::PixelFormat::Invalid;
+QString formatName(Aurora::StreamCamera::PixelFormat format)
+{
+    return QString::number(static_cast<int>(format));
+}
+#else
+const Aurora::StreamCamera::PixelFormat RgbFormat = Aurora::StreamCamera::PixelFormat::XRGB32;
+QString formatName(Aurora::StreamCamera::PixelFormat format)
+{
+    return QString::fromStdString(Aurora::StreamCamera::toString(format));
+}
+#endif
+
+} // namespace
+
 using namespace Aurora::StreamCamera;
 
 namespace {
@@ -80,12 +99,12 @@ bool ScreenCapture::start()
     PixelFormat format = PixelFormat::YCbCrFlexible;
     QStringList formats;
     for (PixelFormat supported : m_camera->getSupportedPixelFormats()) {
-        formats << QString::fromStdString(toString(supported));
-        if (supported == PixelFormat::XRGB32) format = PixelFormat::XRGB32;
+        formats << formatName(supported);
+        if (RgbFormat != PixelFormat::Invalid && supported == RgbFormat) format = RgbFormat;
     }
     m_loggedFrames = 0;
     emit message(QStringLiteral("screen camera formats: %1, using %2")
-                 .arg(formats.join(','), QString::fromStdString(toString(format))));
+                 .arg(formats.join(','), formatName(format)));
     if (!m_camera->startCapture(cap, format)) {
         m_camera.reset();
         setError("The screen capture did not start");
@@ -134,10 +153,10 @@ void ScreenCapture::onCameraFrame(std::shared_ptr<GraphicBuffer> buffer)
         ++m_loggedFrames;
         emit message(QStringLiteral("screen frame %1x%2 %3 handle %4")
                      .arg(buffer->width).arg(buffer->height)
-                     .arg(QString::fromStdString(toString(buffer->pixelFormat)))
+                     .arg(formatName(buffer->pixelFormat))
                      .arg(static_cast<int>(buffer->handleType)));
     }
-    if (buffer->pixelFormat == PixelFormat::XRGB32) {
+    if (RgbFormat != PixelFormat::Invalid && buffer->pixelFormat == RgbFormat) {
         std::shared_ptr<const RawImageFrame> raw = buffer->map();
         if (!raw || !raw->data || raw->width == 0 || raw->height == 0) {
             if (logFrame) emit message(QStringLiteral("screen frame could not be mapped"));

@@ -5,6 +5,7 @@
 #include <QJsonObject>
 #include <QObject>
 #include <QVariantMap>
+#include <future>
 #include "appstate.h"
 
 // Logins, organizer tokens and stream keys of Jitsi servers, kept by server
@@ -16,6 +17,10 @@
 //
 // When the key store cannot be used (as in the SDK emulator), logins are kept
 // in memory until the application closes, and the file is left untouched.
+// The key is asked for in the background when the application starts: a key
+// store that does not answer must not stop the interface from joining a
+// meeting. Logins saved before the key arrives are kept in memory and written
+// to the file once it does.
 class KeystoreLoginStore : public QObject, public LoginStore
 {
     Q_OBJECT
@@ -35,6 +40,8 @@ private:
     void save();
 
     bool m_opened = false;
+    bool m_waitReported = false;
+    std::future<std::pair<QByteArray, QString>> m_keyRequest;
     QByteArray m_key;
     QJsonObject m_entries;
 };

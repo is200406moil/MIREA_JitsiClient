@@ -1,10 +1,15 @@
 Name:       ru.mirea.JitsiClient
 Summary:    Клиент видеоконференций Jitsi Meet для Авроры
 Version:    0.1
-Release:    135
+Release:    142
 License:    BSD-3-Clause
 URL:        https://auroraos.ru
 Source0:    %{name}-%{version}.tar.bz2
+
+# Aurora OS 5.1 has only the Gecko based Sailfish WebView, later versions the
+# Chromium based Aurora WebView. Taken from the build target, so the same
+# spec builds both packages; --define 'gecko 0|1' overrides it.
+%{!?gecko:%global gecko %(grep -c '^VERSION_ID=5[.]1[.]' /etc/os-release 2>/dev/null || true)}
 
 # Bundled private libraries: the documented Aurora application packaging model.
 %global __provides_exclude_from ^%{_datadir}/%{name}/lib/.*$
@@ -17,7 +22,12 @@ Requires:   libkeepalive
 Requires:   qt5-qtdeclarative-import-multimedia
 Requires:   qt5-qtmultimedia-plugin-mediaservice-gstmediacapture
 BuildRequires:  pkgconfig(auroraapp)
+%if 0%{?gecko}
+# Aurora OS 5.1: the Gecko based Sailfish WebView.
+Requires:   sailfish-components-webview-qt5
+%else
 BuildRequires:  pkgconfig(aurorawebview)
+%endif
 BuildRequires:  pkgconfig(Qt5Core)
 BuildRequires:  pkgconfig(Qt5Qml)
 BuildRequires:  pkgconfig(Qt5Quick)
@@ -41,7 +51,7 @@ BuildRequires:  streamcamera-gstreamer-codec-plugin
 %autosetup
 
 %build
-%qmake5 VERSION=%{version} RELEASE=%{release}
+%qmake5 VERSION=%{version} RELEASE=%{release} %{?gecko:CONFIG+=gecko}
 %make_build
 
 %install

@@ -15,3 +15,4 @@ documentation.list
 tests/.build/
 tests/.build-ks/
 !packages/*.rpm
+!packages/aurora-5.1/*.rpm

@@ -4357,7 +4357,12 @@
         else state.videoMuted = true;
         for (const type of wanted) {
             try {
-                state.local.tracks[type] = await createTrack(type);
+                // Gecko 78 (Aurora OS 5.1) can leave the request unanswered;
+                // the meeting is joined without the device then.
+                state.local.tracks[type] = await Promise.race([
+                    createTrack(type),
+                    new Promise((resolve, reject) => setTimeout(() => reject(new Error('no answer in 30 s')), 30000))
+                ]);
             } catch (error) {
                 log('local track', type, error);
                 if (type === 'audio') state.audioMuted = true;

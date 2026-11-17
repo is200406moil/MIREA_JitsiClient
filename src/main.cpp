@@ -1,6 +1,8 @@
 #include <QtQuick>
 #include <auroraapp.h>
+#ifndef APP_GECKO_WEBVIEW
 #include <webenginecontext.h>
+#endif
 #include "appstate.h"
 #include "clienttranslator.h"
 #include "screencapture.h"
@@ -47,7 +49,9 @@ int main(int argc, char *argv[])
         qputenv("STREAMCAMERA_PLUGIN_DIR", pluginDir);
         qputenv("GSTREAMER_CAMERA_DEVICE_PROVIDER", "aurorajitsiemulatorprovider");
     }
+#ifndef APP_GECKO_WEBVIEW
     Aurora::WebView::WebEngineContext::InitBrowser(argc, argv);
+#endif
 
     QScopedPointer<QGuiApplication> application(Aurora::Application::application(argc, argv));
     application->setOrganizationName(QStringLiteral("ru.mirea"));

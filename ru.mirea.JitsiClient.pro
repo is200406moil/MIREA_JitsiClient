@@ -11,9 +11,21 @@ CONFIG += \
     auroraapp
 
 PKGCONFIG += \
-    aurorawebview \
     qca2-qt5 \
     streamcamera
+
+# Aurora OS 5.2 and later have the Chromium based Aurora WebView; Aurora OS
+# 5.1 has only the Gecko based Sailfish WebView (CONFIG+=gecko, set by the
+# spec file). Each package gets only its own variant of qml/webview.
+gecko {
+    DEFINES += APP_GECKO_WEBVIEW
+    webview.files = $$files($$PWD/webview/gecko/*.qml)
+} else {
+    PKGCONFIG += aurorawebview
+    webview.files = $$files($$PWD/webview/cef/*.qml)
+}
+webview.path = /usr/share/$$TARGET/qml/webview
+INSTALLS += webview
 
 contains(QT_ARCH, x86_64) {
     PKGCONFIG += gstreamer-1.0

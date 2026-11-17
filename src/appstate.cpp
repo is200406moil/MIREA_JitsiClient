@@ -488,6 +488,7 @@ void AppState::handleRequest(QTcpSocket *socket)
     if (request.size() != 3) { sendResponse(socket, 400, "text/plain", "Bad request"); return; }
     int contentLength = 0;
     QByteArray origin;
+    QByteArray referer;
     QByteArray host;
     for (const QByteArray &line : lines) {
         const int colon = line.indexOf(':');
@@ -496,6 +497,7 @@ void AppState::handleRequest(QTcpSocket *socket)
         const QByteArray value = line.mid(colon + 1).trimmed();
         if (key == "content-length") contentLength = value.toInt();
         if (key == "origin") origin = value;
+        if (key == "referer") referer = value;
         if (key == "host") host = value;
     }
     if (contentLength < 0 || contentLength > 32768) { sendResponse(socket, 413, "text/plain", "Request too large"); return; }
@@ -511,8 +513,12 @@ void AppState::handleRequest(QTcpSocket *socket)
     if (request[0] == "GET" && request[1] == route) {
         sendResponse(socket, 200, "text/html; charset=utf-8", m_meetingHtml); return;
     }
-    if (request[0] == "POST" && request[1] == route + "event"
-        && origin == "http://" + expectedHost) {
+    // Chromium sends Origin with the page's events; Gecko 78 (Aurora OS 5.1)
+    // sends none for a same-origin request, only Referer. The random route
+    // keeps other pages and processes out either way.
+    const QByteArray page = "http://" + expectedHost + route;
+    const bool fromPage = origin.isEmpty() ? referer.startsWith(page) : origin == "http://" + expectedHost;
+    if (request[0] == "POST" && request[1] == route + "event" && fromPage) {
         const QJsonObject event = QJsonDocument::fromJson(buffer.mid(split + 4, contentLength)).object();
         const QString name = event.value("name").toString();
         const QVariantMap data = event.value("data").toObject().toVariantMap();
