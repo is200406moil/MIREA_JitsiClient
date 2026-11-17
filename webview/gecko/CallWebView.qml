@@ -48,6 +48,11 @@ RawWebView {
         // screen in VP9, which stays black without it. The page announces
         // VP8 and VP9 (qml/call/call.js) and sends VP8.
         WebEngineSettings.setPreference("media.peerconnection.video.vp9_enabled", true)
+        // Gecko 78 reports a low receive bandwidth (REMB) to the bridge, which
+        // then sends the lowest layer (a screen shared from the Jitsi mobile
+        // app at 480x270 here, 960x540 in a desktop browser): the estimate
+        // starts from 2.5 Mbit/s at least.
+        WebEngineSettings.setPreference("media.peerconnection.video.min_bitrate_estimate", 2500000)
     }
 
     onRecvAsyncMessage: {
