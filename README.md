@@ -44,11 +44,15 @@ The screens outside a meeting are written in QML (Silica). The meeting screen is
 
 ## Compatibility
 
-Aurora OS 5.2. Tested on the emulator 5.2.1.200 x86_64. The aarch64 package builds and passes the validator, but it has not been run on a device yet.
+Aurora OS 5.2. Tested on the emulator 5.2.1.200 x86_64. The aarch64 package builds and passes the validator, but it has not been run on a device yet. Building and running on Aurora OS 5.1 (including 5.1.1.60) have not been verified.
 
 ## Build
 
-General guide: [Aurora SDK](https://developer.auroraos.ru/doc/sdk). No additional modules or parameters are needed.
+General guide: [Aurora SDK](https://developer.auroraos.ru/doc/sdk). The instructions below were verified with SDK/Target 5.2.1.200; no additional modules were installed manually for that configuration.
+
+The selected build Target must provide development packages exposing the `pkg-config` modules `aurorawebview`, `qca2-qt5`, and `streamcamera` (see `PKGCONFIG` in the `.pro` file and `BuildRequires` in the RPM spec). Availability depends on the Target version and package set; a `-devel` suffix is not guaranteed to be the exact package name.
+
+For Aurora OS 5.1.1.60, select the matching SDK Target and check these modules inside its build environment using `pkg-config --modversion aurorawebview`, `pkg-config --modversion qca2-qt5`, and `pkg-config --modversion streamcamera`. `Project ERROR: aurorawebview development package not found` means qmake cannot find that required module in the selected build environment. API compatibility changes may still be needed even after the dependencies are installed. Do not remove `aurorawebview`: the meeting screen uses WebView.
 
 In Aurora IDE, open `ru.mirea.JitsiClient.pro`, choose a target and build. From the command line:
 
