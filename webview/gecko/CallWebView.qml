@@ -1,5 +1,6 @@
 import QtQuick 2.6
 import Sailfish.WebView 1.0
+import Sailfish.WebEngine 1.0
 
 // The meeting page (Aurora OS 5.1: the Gecko based Sailfish WebView).
 // RawWebView, not WebView: WebView answers camera and microphone requests with
@@ -41,7 +42,13 @@ RawWebView {
         return fallback
     }
 
-    Component.onCompleted: view.addMessageListener("embed:webrtcrequest")
+    Component.onCompleted: {
+        view.addMessageListener("embed:webrtcrequest")
+        // VP9 is off in this Gecko build; the Jitsi mobile app shares the
+        // screen in VP9, which stays black without it. The page announces
+        // VP8 and VP9 (qml/call/call.js) and sends VP8.
+        WebEngineSettings.setPreference("media.peerconnection.video.vp9_enabled", true)
+    }
 
     onRecvAsyncMessage: {
         if (message !== "embed:webrtcrequest") return

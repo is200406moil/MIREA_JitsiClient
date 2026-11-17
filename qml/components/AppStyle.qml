@@ -3,10 +3,14 @@ import QtQuick 2.0
 import Sailfish.Silica 1.0
 
 // Colours and sizes of the Jitsi Meet mobile theme (react/features/base/ui:
-// Tokens.ts + jitsiTokens.json). Screens are laid out in dp of a 360 dp wide
-// phone and scaled by `dp`, like React Native lays out the Android client.
+// Tokens.ts + jitsiTokens.json). Screens are laid out in dp and scaled by
+// `dp`, like React Native lays out the Android client.
 QtObject {
-    readonly property real dp: Screen.width / 360
+    // An Android dp is about 1.5 Silica pixel-ratio units (the Jolla 1 has
+    // 1.0 at about 240 ppi). A phone keeps at least 360 dp across; a tablet
+    // (KVADRA_T: 1200 px, pixel ratio 1.0) gets 800 dp instead of a phone
+    // layout blown up 3.3 times.
+    readonly property real dp: Math.min(Screen.width / 360, Theme.pixelRatio * 1.5)
 
     // Surfaces
     readonly property color background: "#040404"   // uiBackground

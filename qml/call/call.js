@@ -254,7 +254,6 @@
         collabDetails: null,
         whiteboardOpen: false,
         screenSharing: false,
-        cameraTrackBeforeShare: null,
         avModeration: { audio: false, video: false },
         connectionIndicators: new Map(),
         participantFilter: ''
@@ -275,7 +274,19 @@
     }
 
     function person(id) {
+        if (id === LOCAL_SCREEN_ID) return localScreen();
         return id === state.localId || id === 'local' ? state.local : state.remotes.get(id);
+    }
+
+    // The own screen share is a second video track beside the camera; it is
+    // shown as a view of its own (as in the mobile client).
+    const LOCAL_SCREEN_ID = 'local-screen';
+
+    function localScreen() {
+        const desktop = state.local.tracks.desktop;
+        if (!desktop) return null;
+        return { id: LOCAL_SCREEN_ID, local: true, screen: true, name: state.local.name, avatarURL: state.local.avatarURL,
+            role: 'none', raisedHand: false, tracks: { video: desktop } };
     }
 
     // ------------------------------------------------------------- rendering
@@ -408,7 +419,7 @@
             view.querySelectorAll('.indicators, .top-indicators, .name').forEach(node => node.remove());
             const bottom = el('div', 'indicators');
             const audio = p.tracks.audio;
-            if (!audio || audio.isMuted()) {
+            if (!p.screen && (!audio || audio.isMuted())) {
                 const muted = el('div', 'indicator');
                 muted.appendChild(icon('mic-slash', 'small'));
                 bottom.appendChild(muted);
@@ -436,6 +447,22 @@
                 view.appendChild(top);
             }
             if (options.name) view.appendChild(el('div', 'name', displayNameOf(p)));
+        }
+        // On the stage the thumbnail with its indicators may be hidden (a
+        // meeting of two), so a raised hand is shown there too.
+        if (options.stageHand) {
+            let hand = view.querySelector('.stage-hand');
+            if (p.raisedHand) {
+                if (!hand) {
+                    hand = el('div', 'stage-hand');
+                    hand.appendChild(icon('raise-hand', 'small'));
+                    hand.appendChild(el('span', 'stage-hand-name'));
+                    view.appendChild(hand);
+                }
+                hand.querySelector('.stage-hand-name').textContent = displayNameOf(p);
+            } else if (hand) {
+                hand.remove();
+            }
         }
         view.classList.toggle('dominant', !p.local && p.id === state.dominantId && state.remotes.size > 1);
         view.classList.toggle('raised-hand', !!p.raisedHand);
@@ -474,14 +501,17 @@
             reconcile($('filmstrip'), [], 'thumbnail', {});
             const people = [...state.remotes.values()];
             if (showSelf || !people.length) people.push(state.local);
+            if (localScreen()) people.push(localScreen());
             layoutTiles(people.length);
             reconcile($('tiles'), people, 'tile participant', { indicators: true, name: true, menu: true, onClick: toggleToolbox });
         } else {
             reconcile($('tiles'), [], 'tile', {});
             const videoOnStage = !!state.sharedVideo && !state.pinnedId;
-            reconcile($('stage'), videoOnStage ? [] : [stageParticipant()], 'participant', { onClick: toggleToolbox });
+            reconcile($('stage'), videoOnStage ? [] : [stageParticipant()], 'participant', { stageHand: true, onClick: toggleToolbox });
             const thumbs = shouldRemoteVideosBeVisible() ? [...state.remotes.values()] : [];
             if (filmstripVisible() && showSelf) thumbs.push(state.local);
+            const screen = localScreen();
+            if (screen) thumbs.push(screen);
             reconcile($('filmstrip'), thumbs, 'thumbnail participant', { indicators: true, menu: true, onClick: togglePin });
             $('filmstrip').hidden = !thumbs.length;
         }
@@ -499,6 +529,7 @@
         grid.style.gridTemplateColumns = `repeat(${columns}, ${Math.max(size, 80)}px)`;
         grid.style.justifyContent = 'center';
         grid.style.gridAutoRows = `${Math.max(size, 80)}px`;
+        grid.style.setProperty('--tile', `${Math.max(size, 80)}px`);
     }
 
     let lastConstraints = '';
@@ -513,7 +544,10 @@
             const track = staged && !staged.local && staged.tracks.video;
             if (track && typeof track.getSourceName === 'function') {
                 onStage = [track.getSourceName()];
-                constraints[onStage[0]] = { maxHeight: 720 };
+                // A shared screen gets the full quality on the stage, as in
+                // jitsi-meet (ULTRA, 2160); a camera stays at 720.
+                const desktop = track.getVideoType && track.getVideoType() === 'desktop';
+                constraints[onStage[0]] = { maxHeight: desktop ? 2160 : 720 };
             }
         }
         const value = {
@@ -645,8 +679,10 @@
     }
 
     function togglePin(id) {
+        const wasScreen = state.pinnedId === LOCAL_SCREEN_ID;
         state.pinnedId = state.pinnedId === id ? '' : id;
-        sendFollowMe();
+        // The own screen view exists only here; the others follow the rest.
+        if (id !== LOCAL_SCREEN_ID && !wasScreen) sendFollowMe();
         render();
     }
 
@@ -1040,6 +1076,7 @@
     // RemoteVideoMenu.native: the participant's menu from the participants
     // list or a long press on the thumbnail.
     function openParticipantMenu(id) {
+        if (id === LOCAL_SCREEN_ID) return;
         if (id === state.localId || id === 'local') { openLocalMenu(); return; }
         const p = person(id);
         if (!p) return;
@@ -1058,7 +1095,7 @@
                     if (state.avModeration && state.avModeration.audio && typeof state.conference.avModerationApprove === 'function') {
                         state.conference.avModerationApprove('audio', p.id);
                     } else {
-                        state.conference.sendEndpointMessage(p.id, { name: ASK_UNMUTE_MESSAGE });
+                        sendEndpoint(p.id, { name: ASK_UNMUTE_MESSAGE });
                     }
                 });
             }
@@ -1629,6 +1666,13 @@
         source.connect(gain);
         gain.connect(compressor);
         compressor.connect(output);
+        // Connected to the speaker at zero volume: an audio context without
+        // an output runs Gecko's media graph on a timer, and the voices of
+        // the others (played in the same graph) are then not heard.
+        const silent = audio.createGain();
+        silent.gain.value = 0;
+        compressor.connect(silent);
+        silent.connect(audio.destination);
         if (audio.state === 'suspended') audio.resume().catch(() => {});
 
         const TARGET = -22;     // speech level, dBFS (RMS over 100 ms)
@@ -1697,7 +1741,14 @@
     async function setLocalTrack(type, track) {
         const old = state.local.tracks[type];
         if (state.conference) {
-            if (old) await state.conference.replaceTrack(old, track);
+            // lib-jitsi-meet replaces a video track only with one of the same
+            // video type; the camera and the screen are swapped by removing
+            // one and adding the other.
+            const swap = old && track && type === 'video' && old.getVideoType() !== track.getVideoType();
+            if (swap) {
+                await state.conference.replaceTrack(old, null);
+                await state.conference.addTrack(track);
+            } else if (old) await state.conference.replaceTrack(old, track);
             else if (track) await state.conference.addTrack(track);
         }
         if (old && old !== track) old.dispose();
@@ -1847,12 +1898,12 @@
     const LOWER_HAND_MESSAGE = 'lower-hand-message';
 
     function lowerHand(id) {
-        if (state.conference) state.conference.sendEndpointMessage(id, { name: LOWER_HAND_MESSAGE });
+        sendEndpoint(id, { name: LOWER_HAND_MESSAGE });
     }
 
     function lowerAllHands() {
         if (state.local.raisedHand) toggleRaiseHand();
-        if (state.conference) state.conference.sendEndpointMessage('', { name: LOWER_HAND_MESSAGE });
+        sendEndpoint('', { name: LOWER_HAND_MESSAGE });
     }
 
     // A hand still raised from an earlier promotion would make the visitor
@@ -1883,11 +1934,31 @@
         render();
     }
 
+    // Endpoint messages (reactions, lower hand, ask to unmute) go over the
+    // bridge channel; while it is not open (Gecko 78 may fail to open it)
+    // they go as JSON messages over XMPP, which the other clients receive
+    // as the same endpoint message.
+    let bridgeChannelOpen = false;
+
+    function sendEndpoint(to, payload) {
+        const conference = state.conference;
+        if (!conference) return;
+        if (bridgeChannelOpen) {
+            try {
+                conference.sendEndpointMessage(to, payload);
+                return;
+            } catch (error) {
+                log('bridge channel', error.message || error);
+            }
+        }
+        conference.sendMessage(payload, to || '');
+    }
+
     function sendReaction(key) {
         closeSheet();
         showReaction(key);
         if (state.conference && state.joined) {
-            state.conference.sendEndpointMessage('', { name: 'endpoint-reaction', reactions: [key], timestamp: Date.now() });
+            sendEndpoint('', { name: 'endpoint-reaction', reactions: [key], timestamp: Date.now() });
         }
     }
 
@@ -1897,20 +1968,29 @@
         like: ['reactions-thumbs-up', 'soundReactions'], clap: ['reactions-applause', 'soundReactions'],
         laugh: ['reactions-laughter', 'soundReactions'], surprised: ['reactions-surprise', 'soundReactions'],
         boo: ['reactions-boo', 'soundReactions'], silence: ['reactions-crickets', 'soundReactions'],
-        love: ['reactions-love', 'soundReactions']
+        love: ['reactions-love', 'soundReactions'],
+        // RAISE_HAND_SOUND_ID of jitsi-meet, under the reactions sound setting.
+        raiseHand: ['reactions-raised-hand', 'soundReactions']
     };
     const soundCache = new Map();
+    const soundFailed = new Set();
 
     function playSound(key) {
         const sound = SOUNDS[key];
         if (!sound || prefs[sound[1]] === false) return;
         let audio = soundCache.get(key);
         if (!audio) {
-            audio = new Audio(`${new URL(cfg.server).origin}/sounds/${sound[0]}.mp3`);
+            // The servers have every sound as MP3 and Opus; the Gecko WebView
+            // of Aurora OS 5.1 may have no MP3 decoder, Opus it always has.
+            audio = new Audio(`${new URL(cfg.server).origin}/sounds/${sound[0]}.${gecko ? 'opus' : 'mp3'}`);
             soundCache.set(key, audio);
         }
         audio.currentTime = 0;
-        audio.play().catch(() => {});
+        audio.play().catch(error => {
+            if (soundFailed.has(key)) return;
+            soundFailed.add(key);
+            log('sound', key, error && error.name, error && error.message);
+        });
     }
 
     function showReaction(key) {
@@ -2028,12 +2108,12 @@
                 const desktop = tracks.find(track => track.getType() === 'video');
                 tracks.filter(track => track !== desktop).forEach(track => track.dispose());
                 if (!desktop) throw new Error('No screen track');
-                const camera = state.local.tracks.video;
-                state.cameraTrackBeforeShare = camera && !camera.isMuted() ? 'on' : 'off';
                 desktop.on(JitsiMeetJS.events.track.LOCAL_TRACK_STOPPED, () => { if (state.screenSharing) stopScreenShare(); });
-                await setLocalTrack('video', desktop);
+                // As the mobile client: the screen is a second video track
+                // beside the camera, which stays as it is.
+                await state.conference.addTrack(desktop);
+                state.local.tracks.desktop = desktop;
                 state.screenSharing = true;
-                state.videoMuted = false;
             }
         } catch (error) {
             log('screen share', error && (error.message || error.name) || error);
@@ -2050,12 +2130,17 @@
     async function stopScreenShare() {
         state.screenSharing = false;
         if (nativeShare) { nativeShare.stop(); nativeShare = null; }
-        let camera = null;
-        if (state.cameraTrackBeforeShare === 'on' && !state.audioOnly) {
-            try { camera = await createTrack('video'); } catch (error) { log('camera after share', error); }
+        const desktop = state.local.tracks.desktop;
+        delete state.local.tracks.desktop;
+        if (state.pinnedId === LOCAL_SCREEN_ID) state.pinnedId = '';
+        if (desktop) {
+            try {
+                if (state.conference) await state.conference.removeTrack(desktop);
+            } catch (error) {
+                log('screen share stop', error && (error.message || error));
+            }
+            desktop.dispose();
         }
-        await setLocalTrack('video', camera);
-        state.videoMuted = !camera;
         render();
     }
 
@@ -3807,6 +3892,10 @@
         if (!options.flags || typeof options.flags.ssrcRewritingEnabled === 'undefined') {
             options.flags = Object.assign({}, options.flags, { ssrcRewritingEnabled: true });
         }
+        // Gecko 78 creates the SCTP data channel to the bridge but it never
+        // opens, so endpoint messages (reactions and others) are lost; the
+        // bridge's WebSocket is used instead.
+        if (gecko) options.bridgeChannel = Object.assign({}, options.bridgeChannel, { preferSctp: false });
         return options;
     }
 
@@ -3933,6 +4022,21 @@
         // Gecko 78 (Aurora OS 5.1) describes simulcast video in a way Jicofo
         // refuses (offerAnswerFailed, bad-request): one video layer there.
         if (gecko) options.disableSimulcast = true;
+        // Gecko 78 (Aurora OS 5.1) decodes VP8 only: it has no H264 decoder
+        // (Firefox gets it from the OpenH264 plugin) and does not take VP9 or
+        // AV1 here. The codec list it announces is VP8 alone, so the others
+        // send VP8 to it, a screen of the Jitsi mobile app included (shown
+        // black otherwise).
+        if (gecko) {
+            // The adaptive mode of lib-jitsi-meet takes the camera picture,
+            // kept small on purpose (nativeCameraTrack), for an overloaded
+            // processor and cuts the received video down to 180-270 lines;
+            // the camera adapts itself here.
+            const vp8 = { codecPreferenceOrder: ['VP8', 'VP9'], mobileCodecPreferenceOrder: ['VP8', 'VP9'],
+                screenshareCodec: 'VP8', mobileScreenshareCodec: 'VP8', enableAdaptiveMode: false };
+            options.videoQuality = Object.assign({}, config.videoQuality, vp8);
+            options.p2p = Object.assign({}, options.p2p || config.p2p, vp8);
+        }
         state.polls = new Map();
         state.pollsUnread = 0;
         state.pollDraft = null;
@@ -4036,10 +4140,14 @@
             const raised = isRaised(value);
             if (raised && !p.raisedHand) {
                 showNotification({ key: 'hand', title: displayNameOf(p), description: t('notify.raisedHand'), timeout: 8000 });
+                playSound('raiseHand');
             }
             p.raisedHand = raised;
             render();
         });
+        bridgeChannelOpen = false;
+        if (C.DATA_CHANNEL_OPENED) on(C.DATA_CHANNEL_OPENED, () => { bridgeChannelOpen = true; if (gecko) log('bridge channel open'); });
+        if (C.DATA_CHANNEL_CLOSED) on(C.DATA_CHANNEL_CLOSED, () => { bridgeChannelOpen = false; if (gecko) log('bridge channel closed'); });
         on(C.ENDPOINT_MESSAGE_RECEIVED, (participant, payload) => {
             if (participant && participant.isHidden && participant.isHidden()) onTranscriptionMessage(payload);
             if (payload && payload.name === 'endpoint-reaction' && Array.isArray(payload.reactions)) {
@@ -4164,7 +4272,7 @@
         if (cfg.avatarURL) conference.sendCommand('avatar-url', { value: cfg.avatarURL });
         if (cfg.email) conference.sendCommand('email', { value: cfg.email });
         if (state.local.raisedHand) conference.setLocalParticipantProperty('raisedHand', Date.now());
-        ['audio', 'video'].forEach(type => {
+        ['audio', 'video', 'desktop'].forEach(type => {
             if (state.local.tracks[type]) conference.addTrack(state.local.tracks[type]).catch(error => log('addTrack', error));
         });
         showConnecting(t('connectingOverlay.joiningRoom'));

@@ -24,6 +24,8 @@ Item {
         Accessible.role: Accessible.Button
         Accessible.name: appState.t(header.closeIcon ? "dialog.close" : "dialog.Back")
         Icon {
+            // Drawn at the final size; the screen is scaled up by AppStyle.dp.
+            sourceSize: Qt.size(Math.ceil(width * AppStyle.dp), Math.ceil(height * AppStyle.dp))
             anchors.centerIn: parent
             width: 24
             height: 24

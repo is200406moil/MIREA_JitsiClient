@@ -71,6 +71,8 @@ SilicaFlickable {
                     truncationMode: TruncationMode.Fade
                 }
                 Icon {
+                    // Drawn at the final size; the screen is scaled up by AppStyle.dp.
+                    sourceSize: Qt.size(Math.ceil(width * AppStyle.dp), Math.ceil(height * AppStyle.dp))
                     id: arrow
                     anchors { right: parent.right; rightMargin: 12; verticalCenter: parent.verticalCenter }
                     source: Qt.resolvedUrl("../icons/arrow-right.svg")
@@ -106,6 +108,8 @@ SilicaFlickable {
                     font.pixelSize: AppStyle.bodyShortLarge
                 }
                 Icon {
+                    // Drawn at the final size; the screen is scaled up by AppStyle.dp.
+                    sourceSize: Qt.size(Math.ceil(width * AppStyle.dp), Math.ceil(height * AppStyle.dp))
                     anchors.verticalCenter: parent.verticalCenter
                     source: Qt.resolvedUrl("../icons/arrow-right.svg")
                     width: 24
@@ -254,7 +258,7 @@ SilicaFlickable {
             // Version of the application and of the Aurora OS SDK it is built with.
             model: [
                 { label: "settingsView.version", value: appVersion },
-                { label: "settingsView.sdkVersion", value: "5.2.1.200" }
+                { label: "settingsView.sdkVersion", value: sdkVersion }
             ]
             delegate: Item {
                 width: body.width

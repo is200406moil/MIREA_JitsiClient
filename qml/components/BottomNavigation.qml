@@ -32,6 +32,8 @@ Rectangle {
                     width: parent.width
                     spacing: 2
                     Icon {
+                        // Drawn at the final size; the screen is scaled up by AppStyle.dp.
+                        sourceSize: Qt.size(Math.ceil(width * AppStyle.dp), Math.ceil(height * AppStyle.dp))
                         anchors.horizontalCenter: parent.horizontalCenter
                         source: Qt.resolvedUrl("../icons/" + modelData.icon + ".svg")
                         width: 24

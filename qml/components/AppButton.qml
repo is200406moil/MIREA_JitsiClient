@@ -35,6 +35,8 @@ BackgroundItem {
         anchors.centerIn: parent
         spacing: 8
         Icon {
+            // Drawn at the final size; the screen is scaled up by AppStyle.dp.
+            sourceSize: Qt.size(Math.ceil(width * AppStyle.dp), Math.ceil(height * AppStyle.dp))
             anchors.verticalCenter: parent.verticalCenter
             visible: control.iconName.length > 0
             width: 20

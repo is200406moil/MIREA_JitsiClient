@@ -85,6 +85,7 @@ int main(int argc, char *argv[])
     view->rootContext()->setContextProperty(QStringLiteral("nativeCamera"), &nativeCamera);
 #endif
     view->rootContext()->setContextProperty(QStringLiteral("appVersion"), QStringLiteral(APP_VERSION " build " APP_RELEASE));
+    view->rootContext()->setContextProperty(QStringLiteral("sdkVersion"), QStringLiteral(APP_SDK_VERSION));
     CallControl callControl;
     if (!callControl.registerOnBus()) appState.appendCallLog(QStringLiteral("notification actions are not available"));
     view->rootContext()->setContextProperty(QStringLiteral("callControl"), &callControl);

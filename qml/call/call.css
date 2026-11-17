@@ -97,6 +97,10 @@ h1 { margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; }
 .indicator { height: 24px; min-width: 24px; padding: 2px; border-radius: var(--radius); background: rgba(0, 0, 0, .7);
     display: flex; align-items: center; justify-content: center; }
 .indicator.hand { background: var(--warning02); color: var(--ui-background); }
+.stage-hand { position: absolute; top: calc(var(--titlebar) + 8px); right: 8px; z-index: 2; max-width: 60%; height: 32px; padding: 0 10px;
+    display: flex; align-items: center; gap: 6px; border-radius: var(--radius); background: var(--warning02); color: var(--ui-background);
+    font-size: 14px; font-weight: 600; }
+.stage-hand-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .indicator.connection { color: var(--text01); }
 .indicator.connection.good { background: var(--conn-good); }
 .indicator.connection.nonoptimal { background: var(--conn-nonoptimal); }
@@ -136,7 +140,10 @@ h1 { margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; }
 .tiles .tile { position: relative; border-radius: var(--radius); overflow: hidden; background: var(--ui02);
     border: 1px solid var(--ui03); aspect-ratio: 1; }
 .tiles .tile video { object-fit: cover; }
-.tiles .tile .avatar { width: 40%; height: auto; aspect-ratio: 1; font-size: 28px; }
+/* Sized from the tile (--tile, set by layoutTiles): aspect-ratio is not in
+   Gecko 78 (Aurora OS 5.1). */
+.tiles .tile .avatar { width: calc(var(--tile, 200px) * .4); height: calc(var(--tile, 200px) * .4);
+    font-size: calc(var(--tile, 200px) * .14); }
 .tiles .tile.dominant { border: 2px solid #3d6fc4; }
 .tiles .tile.raised-hand { border: 2px solid var(--warning02); }
 .tile .name { position: absolute; right: 4px; bottom: 4px; max-width: 60%; padding: 2px 6px; border-radius: 4px;

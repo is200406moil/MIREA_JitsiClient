@@ -151,6 +151,8 @@ Page {
                                 highlightedColor: "transparent"
                                 Accessible.name: appState.t(index === 0 ? "toolbar.mute" : "toolbar.videomute")
                                 Icon {
+                                    // Drawn at the final size; the screen is scaled up by AppStyle.dp.
+                                    sourceSize: Qt.size(Math.ceil(width * AppStyle.dp), Math.ceil(height * AppStyle.dp))
                                     anchors.centerIn: parent
                                     width: 32
                                     height: 32
@@ -246,6 +248,8 @@ Page {
                     radius: 60
                     color: "#F8AE1A"  // warning01
                     Icon {
+                        // Drawn at the final size; the screen is scaled up by AppStyle.dp.
+                        sourceSize: Qt.size(Math.ceil(width * AppStyle.dp), Math.ceil(height * AppStyle.dp))
                         anchors.centerIn: parent
                         width: 56
                         height: 56

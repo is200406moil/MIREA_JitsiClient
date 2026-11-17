@@ -113,6 +113,8 @@ Item {
                         height: 24
                         anchors.verticalCenter: parent.verticalCenter
                         Icon {
+                            // Drawn at the final size; the screen is scaled up by AppStyle.dp.
+                            sourceSize: Qt.size(Math.ceil(width * AppStyle.dp), Math.ceil(height * AppStyle.dp))
                             anchors.centerIn: parent
                             // The trash glyph fills its box; draw it at the
                             // optical size of the other icons.
