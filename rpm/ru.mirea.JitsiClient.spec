@@ -1,7 +1,7 @@
 Name:       ru.mirea.JitsiClient
 Summary:    Клиент видеоконференций Jitsi Meet для Авроры
 Version:    0.1
-Release:    143
+Release:    153
 License:    BSD-3-Clause
 URL:        https://auroraos.ru
 Source0:    %{name}-%{version}.tar.bz2

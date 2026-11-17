@@ -47,6 +47,8 @@ class AppState : public QObject
 public:
     explicit AppState(QObject *parent = nullptr, const QString &settingsFile = QString());
     void setScreenFrameSource(ScreenFrameSource *source) { m_screen = source; }
+    // Camera frames from the application (NativeCamera, Aurora OS 5.1).
+    void setCameraFrameSource(ScreenFrameSource *source) { m_camera = source; }
     void setLoginStore(LoginStore *store) { m_logins = store; }
     QString displayName() const;
     QString email() const;
@@ -107,6 +109,7 @@ private:
     QTcpServer m_http;
     enum ScreenShareState { ScreenShareNone, ScreenShareWaiting, ScreenShareAllowed, ScreenShareRefused };
     ScreenFrameSource *m_screen = nullptr;
+    ScreenFrameSource *m_camera = nullptr;
     ScreenShareState m_screenShare = ScreenShareNone;
     LoginStore *m_logins = nullptr;
     QVariantList m_rooms;

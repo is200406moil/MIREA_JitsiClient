@@ -1447,14 +1447,251 @@
 
     // ------------------------------------------------------------------ media
 
+    // Gecko (Aurora OS 5.1) chooses the camera device in the application,
+    // which needs to know the facing before the request; its cameras also
+    // refuse exact size limits, so only the preferred size is given there.
+    const gecko = /Firefox\//.test(navigator.userAgent);
+
+    // The camera from the application (Aurora OS 5.1, see NativeCamera):
+    // JPEG frames of the local server are drawn on a canvas, and the canvas
+    // stream becomes the camera track. Disposing the track stops the camera.
+    let nativeCameraSerial = 0;
+
+    // The outgoing frames of a track so far (outbound-rtp framesEncoded), or
+    // null while it is not sent.
+    async function encodedFrames(mediaTrack) {
+        const room = state.conference;
+        if (!room) return null;
+        const session = room.isP2PActive && room.isP2PActive() ? room.p2pJingleSession : room.jvbJingleSession;
+        const pc = session && session.peerconnection && session.peerconnection.peerconnection;
+        if (!pc) return null;
+        let frames = null;
+        try {
+            (await pc.getStats(mediaTrack)).forEach(report => {
+                if (report.type === 'outbound-rtp' && typeof report.framesEncoded === 'number') frames = report.framesEncoded;
+            });
+        } catch (error) {
+            return null;
+        }
+        return frames;
+    }
+
+    // The camera from the application (Aurora OS 5.1, see NativeCamera):
+    // JPEG frames of the local server are drawn on a canvas, and the canvas
+    // stream becomes the camera track. Disposing the track stops the camera.
+    //
+    // Gecko encodes video in software, and how much a device manages is not
+    // told by its processor (KVADRA_T has 8 slow cores). The picture size
+    // follows what the encoder actually sends: one step down while it
+    // falls behind 15 frames per second, one step up (to the server's size
+    // at most) while it keeps up.
+    async function nativeCameraTrack(facing) {
+        // A newer track (another camera) owns the application camera; an
+        // older one only stops drawing when disposed.
+        const serial = ++nativeCameraSerial;
+        const config = state.serverConfig || {};
+        const ideal = config.constraints && config.constraints.video && config.constraints.video.height
+            && config.constraints.video.height.ideal;
+        const limit = Number(ideal || config.resolution) || 720;
+        // The shorter side of the picture, from the largest.
+        const steps = [1080, 720, 540, 480, 360, 270].filter(height => height <= limit);
+        if (!steps.length) steps.push(limit);
+        let step = steps.findIndex(height => height <= 480);
+        if (step < 0) step = steps.length - 1;
+        // The application grabs at the server's size; the page scales down.
+        notify('nativeCamera', { active: true, facing, maxHeight: limit });
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        const frameUrl = new URL('camera.jpg', location.href).toString();
+        let stopped = false;
+        let timer = 0;
+        let adaptTimer = 0;
+        const stop = () => {
+            if (stopped) return;
+            stopped = true;
+            clearTimeout(timer);
+            clearTimeout(adaptTimer);
+            if (serial === nativeCameraSerial) notify('nativeCamera', { active: false });
+        };
+        // 200 with a frame drawn, false while none is ready; throws when the
+        // camera failed.
+        const draw = async () => {
+            const response = await fetch(frameUrl, { cache: 'no-store' });
+            if (response.status === 503) throw new Error(await response.text());
+            if (response.status !== 200) return false;
+            const bitmap = await createImageBitmap(await response.blob());
+            const scale = Math.min(1, steps[step] / Math.min(bitmap.width, bitmap.height));
+            const width = 2 * Math.round(bitmap.width * scale / 2);
+            const height = 2 * Math.round(bitmap.height * scale / 2);
+            if (canvas.width !== width || canvas.height !== height) {
+                canvas.width = width;
+                canvas.height = height;
+            }
+            context.drawImage(bitmap, 0, 0, width, height);
+            if (bitmap.close) bitmap.close();
+            return true;
+        };
+        const deadline = Date.now() + 10000;
+        try {
+            while (!(await draw())) {
+                if (Date.now() > deadline) throw new Error('No camera frames');
+                await new Promise(resolve => setTimeout(resolve, 150));
+            }
+        } catch (error) {
+            stop();
+            error.name = 'gum.general';
+            throw error;
+        }
+        const next = async () => {
+            if (stopped) return;
+            const started = Date.now();
+            try { await draw(); } catch (error) { log('camera frame', error.message || error); }
+            // 15 pictures per second, the time of the fetch included.
+            if (!stopped) timer = setTimeout(next, Math.max(0, 66 - (Date.now() - started)));
+        };
+        timer = setTimeout(next, 66);
+        const stream = canvas.captureStream(15);
+        const mediaTrack = stream.getVideoTracks()[0];
+
+        // A size the encoder fell behind at is tried again after a minute.
+        const failedAt = {};
+        let last = null;
+        let goodWindows = 0;
+        const adapt = async () => {
+            if (stopped) return;
+            const frames = await encodedFrames(mediaTrack);
+            const now = Date.now();
+            if (frames !== null && last && frames > last.frames) {
+                const fps = (frames - last.frames) * 1000 / (now - last.at);
+                let wanted = step;
+                if (fps < 11 && step < steps.length - 1) {
+                    failedAt[step] = now;
+                    wanted = step + 1;
+                } else if (fps >= 14) {
+                    goodWindows++;
+                    const tried = failedAt[step - 1];
+                    if (goodWindows >= 2 && step > 0 && !(tried && now - tried < 60000)) wanted = step - 1;
+                } else {
+                    goodWindows = 0;
+                }
+                if (wanted !== step) {
+                    log('camera picture', steps[step], '->', steps[wanted], 'lines at', fps.toFixed(1), 'fps');
+                    step = wanted;
+                    goodWindows = 0;
+                    // The window after a change is not counted.
+                    last = null;
+                    adaptTimer = setTimeout(adapt, 4000);
+                    return;
+                }
+            }
+            last = frames === null ? null : { frames, at: now };
+            adaptTimer = setTimeout(adapt, 4000);
+        };
+        adaptTimer = setTimeout(adapt, 4000);
+
+        // A camera track takes its size from the constraints when the track
+        // does not tell it (a canvas track of Gecko 78 does not).
+        const tracks = await Promise.resolve(JitsiMeetJS.createLocalTracksFromMediaStreams([{
+            stream, sourceType: 'camera', mediaType: 'video', videoType: 'camera',
+            constraints: { height: { ideal: canvas.height }, width: { ideal: canvas.width } }
+        }]));
+        const track = tracks[0];
+        const dispose = track.dispose.bind(track);
+        track.dispose = () => { stop(); return dispose(); };
+        track.auroraNative = true;
+        return track;
+    }
+
+    // The microphone on Aurora OS 5.1 (Gecko). Some devices give a very quiet
+    // signal (KVADRA_T: speech about 25 dB under the usual level, already in
+    // the system), which the WebRTC gain control of Gecko 78 does not make
+    // up. The gain follows the speech: while someone speaks, it moves the
+    // level towards the usual one (0 to +30 dB); in pauses it stays, so the
+    // noise is not raised. A compressor keeps the peaks from clipping. A
+    // device with a normal microphone stays near 0 dB.
+    async function adaptiveMicrophone(track) {
+        const AudioContextType = window.AudioContext || window.webkitAudioContext;
+        const input = track.getOriginalStream();
+        if (!AudioContextType || !input) return track;
+        const audio = new AudioContextType();
+        const source = audio.createMediaStreamSource(input);
+        const analyser = audio.createAnalyser();
+        analyser.fftSize = 2048;
+        const gain = audio.createGain();
+        const compressor = audio.createDynamicsCompressor();
+        compressor.threshold.value = -10;
+        compressor.knee.value = 6;
+        compressor.ratio.value = 12;
+        compressor.attack.value = 0.003;
+        compressor.release.value = 0.25;
+        const output = audio.createMediaStreamDestination();
+        source.connect(analyser);
+        source.connect(gain);
+        gain.connect(compressor);
+        compressor.connect(output);
+        if (audio.state === 'suspended') audio.resume().catch(() => {});
+
+        const TARGET = -22;     // speech level, dBFS (RMS over 100 ms)
+        const SPEECH = -62;     // quieter than this is a pause
+        const MAX_GAIN = 30;
+        let gainDb = 12;
+        let reported = gainDb;
+        gain.gain.value = Math.pow(10, gainDb / 20);
+        const samples = new Float32Array(analyser.fftSize);
+        const timer = setInterval(() => {
+            analyser.getFloatTimeDomainData(samples);
+            let sum = 0;
+            for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
+            const level = 10 * Math.log10(sum / samples.length + 1e-12);
+            if (level < SPEECH) return;
+            const wanted = Math.max(0, Math.min(MAX_GAIN, TARGET - level));
+            // Down quickly (loud speech), up within a few seconds of speech.
+            const change = wanted - gainDb;
+            gainDb += change < 0 ? Math.max(change, -3) * 0.5 : Math.min(change, 2) * 0.3;
+            gain.gain.setTargetAtTime(Math.pow(10, gainDb / 20), audio.currentTime, 0.05);
+            if (Math.abs(gainDb - reported) >= 6) {
+                reported = gainDb;
+                log('microphone gain', Math.round(gainDb), 'dB');
+            }
+        }, 100);
+
+        const tracks = await Promise.resolve(JitsiMeetJS.createLocalTracksFromMediaStreams([{
+            stream: output.stream, sourceType: 'microphone', mediaType: 'audio'
+        }]));
+        const wrapped = tracks[0];
+        const dispose = wrapped.dispose.bind(wrapped);
+        wrapped.dispose = () => {
+            clearInterval(timer);
+            audio.close().catch(() => {});
+            track.dispose();
+            return dispose();
+        };
+        return wrapped;
+    }
+
     async function createTrack(type) {
         const options = { devices: [type] };
         if (type === 'video') {
+            if (gecko && cfg.nativeCamera) return nativeCameraTrack(state.facingMode);
             options.facingMode = state.facingMode;
-            options.constraints = { video: { height: { ideal: 720, max: 720, min: 180 }, width: { ideal: 1280, max: 1280, min: 320 } } };
+            if (gecko) {
+                await fetch('event', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: 'cameraFacing', data: { facing: state.facingMode } }), credentials: 'omit' }).catch(() => {});
+                options.constraints = { video: { height: { ideal: 720 }, width: { ideal: 1280 } } };
+            } else {
+                options.constraints = { video: { height: { ideal: 720, max: 720, min: 180 }, width: { ideal: 1280, max: 1280, min: 320 } } };
+            }
         }
         const tracks = await JitsiMeetJS.createLocalTracks(options);
-        return tracks.find(track => track.getType() === type) || null;
+        const track = tracks.find(item => item.getType() === type) || null;
+        if (track && type === 'audio' && gecko) {
+            try {
+                return await adaptiveMicrophone(track);
+            } catch (error) {
+                log('microphone gain', error);
+            }
+        }
+        return track;
     }
 
     async function setLocalTrack(type, track) {
@@ -1554,6 +1791,10 @@
                     await setLocalTrack('video', track);
                 } else await track.unmute();
                 state.videoMuted = false;
+            } else if (track && track.auroraNative) {
+                // The application camera is released while the video is off.
+                await setLocalTrack('video', null);
+                state.videoMuted = true;
             } else if (track) {
                 await track.mute();
                 state.videoMuted = true;
@@ -3689,6 +3930,9 @@
             statisticsDisplayName: cfg.displayName
         });
         if (prefs.disableP2p) options.p2p = Object.assign({}, config.p2p, { enabled: false });
+        // Gecko 78 (Aurora OS 5.1) describes simulcast video in a way Jicofo
+        // refuses (offerAnswerFailed, bad-request): one video layer there.
+        if (gecko) options.disableSimulcast = true;
         state.polls = new Map();
         state.pollsUnread = 0;
         state.pollDraft = null;

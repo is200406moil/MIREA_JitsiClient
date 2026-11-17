@@ -6,6 +6,9 @@
 #include "appstate.h"
 #include "clienttranslator.h"
 #include "screencapture.h"
+#ifdef APP_GECKO_WEBVIEW
+#include "nativecamera.h"
+#endif
 #include "keystoreloginstore.h"
 #include "callcontrol.h"
 
@@ -61,6 +64,11 @@ int main(int argc, char *argv[])
     ScreenCapture screenCapture;
     appState.setScreenFrameSource(&screenCapture);
     QObject::connect(&screenCapture, &ScreenCapture::message, &appState, &AppState::appendCallLog, Qt::QueuedConnection);
+#ifdef APP_GECKO_WEBVIEW
+    NativeCamera nativeCamera;
+    appState.setCameraFrameSource(&nativeCamera);
+    QObject::connect(&nativeCamera, &NativeCamera::message, &appState, &AppState::appendCallLog, Qt::QueuedConnection);
+#endif
     KeystoreLoginStore loginStore;
     appState.setLoginStore(&loginStore);
     QObject::connect(&loginStore, &KeystoreLoginStore::message, &appState, &AppState::appendCallLog);
@@ -73,6 +81,9 @@ int main(int argc, char *argv[])
     QObject::connect(&appState, &AppState::interfaceLanguageChanged, application.data(), applyLanguage);
     QScopedPointer<QQuickView> view(Aurora::Application::createView());
     view->rootContext()->setContextProperty(QStringLiteral("appState"), &appState);
+#ifdef APP_GECKO_WEBVIEW
+    view->rootContext()->setContextProperty(QStringLiteral("nativeCamera"), &nativeCamera);
+#endif
     view->rootContext()->setContextProperty(QStringLiteral("appVersion"), QStringLiteral(APP_VERSION " build " APP_RELEASE));
     CallControl callControl;
     if (!callControl.registerOnBus()) appState.appendCallLog(QStringLiteral("notification actions are not available"));

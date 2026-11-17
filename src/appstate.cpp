@@ -364,6 +364,9 @@ bool AppState::startMeeting(const QVariantMap &room, bool muteAudio, bool muteVi
     config["preferences"] = QJsonObject::fromVariantMap(preferences());
     // The WebView cannot capture the screen; the app does it (ScreenCapture).
     config["nativeScreenShare"] = m_screen != nullptr;
+    // The Gecko WebView of Aurora OS 5.1 gets no camera frames on some
+    // devices; the app takes the camera then (NativeCamera).
+    config["nativeCamera"] = m_camera != nullptr;
     QByteArray json = QJsonDocument(config).toJson(QJsonDocument::Compact);
     json.replace("<", "\\u003c");
     json.replace(">", "\\u003e");
@@ -544,6 +547,18 @@ void AppState::handleRequest(QTcpSocket *socket)
         }
         sendResponse(socket, 200, "application/json", "{}");
         emit conferenceEvent(name, data);
+        return;
+    }
+    if (request[0] == "GET" && request[1].startsWith(route + "camera.jpg")) {
+        // The latest camera frame: 204 while none arrived yet, 503 with the
+        // reason when the camera failed. The camera runs only after the page
+        // asked for it (nativeCamera event, handled in RoomPage.qml).
+        if (!m_camera) { sendResponse(socket, 404, "text/plain", QByteArray()); return; }
+        const QString failure = m_camera->error();
+        if (!failure.isEmpty()) { sendResponse(socket, 503, "text/plain; charset=utf-8", failure.toUtf8()); return; }
+        const QByteArray jpeg = m_camera->frame(nullptr);
+        if (jpeg.isEmpty()) { sendResponse(socket, 204, "text/plain", QByteArray()); return; }
+        sendResponse(socket, 200, "image/jpeg", jpeg);
         return;
     }
     if (request[0] == "GET" && request[1].startsWith(route + "screen.jpg")) {

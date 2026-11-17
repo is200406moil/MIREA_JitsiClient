@@ -19,6 +19,8 @@ PKGCONFIG += \
 # spec file). Each package gets only its own variant of qml/webview.
 gecko {
     DEFINES += APP_GECKO_WEBVIEW
+    SOURCES += src/nativecamera.cpp
+    HEADERS += src/nativecamera.h
     webview.files = $$files($$PWD/webview/gecko/*.qml)
 } else {
     PKGCONFIG += aurorawebview

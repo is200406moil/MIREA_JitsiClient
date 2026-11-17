@@ -12,6 +12,7 @@ WebView {
 
     // Used by the Gecko variant only (see webview/gecko/CallWebView.qml).
     property bool shown: true
+    property string cameraFacing: "user"
 
     function runJs(code) {
         view.runJavaScript(code, function(result) {}, function(error) {})

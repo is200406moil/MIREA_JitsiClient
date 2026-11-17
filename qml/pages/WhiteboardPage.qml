@@ -26,6 +26,9 @@ Page {
 
     AppWebView {
         anchors { top: header.bottom; bottom: parent.bottom; left: parent.left; right: parent.right }
-        url: page.address
+        startUrl: page.address
+        // The whiteboard is built for newer browsers than the Gecko WebView
+        // of Aurora OS 5.1.
+        modernCodePatch: true
     }
 }

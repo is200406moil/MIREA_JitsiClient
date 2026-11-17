@@ -7,6 +7,7 @@ JoinRoomForm 1.0 JoinRoomForm.qml
 SettingToggle 1.0 SettingToggle.qml
 SettingSection 1.0 SettingSection.qml
 CameraPreview 1.0 CameraPreview.qml
+NativeCameraSource 1.0 NativeCameraSource.qml
 BottomNavigation 1.0 BottomNavigation.qml
 RoomMenuSheet 1.0 RoomMenuSheet.qml
 SettingDivider 1.0 SettingDivider.qml

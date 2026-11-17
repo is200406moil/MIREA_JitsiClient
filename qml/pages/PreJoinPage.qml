@@ -94,9 +94,14 @@ Page {
             Loader {
                 id: previewLoader
                 anchors.fill: parent
-                active: !page.muteVideo && (page.previewAllowed || page.joining) && !page.previewUnavailable
+                // Unloaded on join: a stopped camera that stays loaded can start again
+                // and keep the device from the call page (Aurora OS 5.1).
+                active: !page.muteVideo && page.previewAllowed && !page.previewUnavailable
                 source: Qt.resolvedUrl("../components/CameraPreview.qml")
-                onLoaded: item.unavailable.connect(function() { page.previewUnavailable = true })
+                onLoaded: {
+                    item.unavailable.connect(function() { page.previewUnavailable = true })
+                    item.pageOrientation = Qt.binding(function() { return page.orientation })
+                }
             }
             // conferenceInfo + displayRoomNameBackdrop
             Rectangle {

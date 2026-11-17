@@ -106,6 +106,7 @@ Page {
         leaving = true
         removeNotifications()
         appState.finishMeeting()
+        if (typeof nativeCamera !== "undefined") nativeCamera.stop()
         if (previousPage) previousPage.resetPreview()
     }
 
@@ -113,6 +114,21 @@ Page {
         target: appState
         onConferenceEvent: {
             switch (name) {
+            case "cameraFacing":
+                webView.cameraFacing = data.facing
+                break
+            case "nativeCamera":
+                if (typeof nativeCamera === "undefined") break
+                if (!data.active) {
+                    nativeCamera.stop()
+                    break
+                }
+                // Another camera: the Camera is made again for it.
+                if (nativeCamera.active && nativeCamera.facing !== data.facing) nativeCamera.stop()
+                nativeCamera.facing = data.facing
+                if (data.maxHeight) nativeCamera.maxHeight = data.maxHeight
+                nativeCamera.start()
+                break
             case "invite":
                 appState.copyText(page.inviteLink)
                 inviteAction.trigger()
@@ -216,6 +232,12 @@ Page {
     }
 
     Rectangle { anchors.fill: parent; color: "#040404" }
+
+    // The camera of the meeting on Aurora OS 5.1, under the meeting view.
+    Loader {
+        active: typeof nativeCamera !== "undefined" && nativeCamera.active
+        sourceComponent: NativeCameraSource { pageOrientation: page.orientation }
+    }
 
     CallWebView {
         id: webView
