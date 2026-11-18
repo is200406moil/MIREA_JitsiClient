@@ -830,6 +830,10 @@ void AppState::handleRequest(QTcpSocket *socket)
         static const QRegularExpression allowed("^[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+)*\\.(js|css|svg|json|png|ttf)$");
         if (allowed.match(path).hasMatch() && !path.contains("..")) {
             QFile asset(Aurora::Application::pathTo("qml/call/" + path).toLocalFile());
+            // The icons shared with the native screens ship once, in qml/icons.
+            if (!asset.exists() && path.startsWith(QLatin1String("icons/")) && path.count('/') == 1) {
+                asset.setFileName(Aurora::Application::pathTo("qml/" + path).toLocalFile());
+            }
             if (asset.open(QIODevice::ReadOnly)) {
                 static const QHash<QString, QByteArray> types {
                     {"js", "text/javascript; charset=utf-8"}, {"css", "text/css; charset=utf-8"},

@@ -1,7 +1,7 @@
 Name:       ru.mirea.JitsiClient
 Summary:    Клиент видеоконференций Jitsi Meet для Авроры
 Version:    0.1
-Release:    162
+Release:    163
 License:    BSD-3-Clause
 URL:        https://auroraos.ru
 Source0:    %{name}-%{version}.tar.bz2
@@ -18,7 +18,6 @@ Source0:    %{name}-%{version}.tar.bz2
 
 Requires:   sailfishsilica-qt5 >= 0.10.9
 Requires:   qt5-qtmultimedia
-Requires:   libkeepalive
 Requires:   qt5-qtdeclarative-import-multimedia
 Requires:   qt5-qtmultimedia-plugin-mediaservice-gstmediacapture
 BuildRequires:  pkgconfig(auroraapp)
@@ -56,6 +55,8 @@ BuildRequires:  streamcamera-gstreamer-codec-plugin
 
 %install
 %make_install
+# The debug symbols are not shipped (rpmlint: unstripped-binary-or-object).
+%{__strip} --strip-unneeded %{buildroot}%{_bindir}/%{name}
 
 %ifarch x86_64
 private_libs=%{buildroot}%{_datadir}/%{name}/lib
@@ -79,6 +80,45 @@ done
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
 
 %changelog
+* Wed Nov 18 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-163
+- Remove the explicit library dependency, the duplicate icons and the debug symbols from the package
+
+* Wed Nov 18 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-162
+- Show the planned meetings, the recent rooms and the meeting state on the cover
+
+* Wed Nov 18 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-161
+- Open the tabs of the main screen from the cover actions
+
+* Wed Nov 18 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-160
+- Plan meetings in the application with reminders
+- Share invitations as iCalendar files and open them in the application
+
+* Wed Nov 18 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-157
+- Colour emoji and emoji input in all text fields
+
+* Wed Nov 18 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-156
+- Assign participants to breakout rooms
+- Choose the recipient of a private message, search the chat, add smileys
+
+* Wed Nov 18 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-155
+- Raise the minimum bandwidth estimate of Gecko
+
+* Wed Nov 18 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-154
+- Meeting fixes on Aurora OS 5.1 and a tablet layout
+
+* Tue Nov 17 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-153
+- Camera, microphone and whiteboard on Aurora OS 5.1
+
+* Tue Nov 17 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-142
+- Build for Aurora OS 5.1 with the Gecko based Sailfish WebView
+- Show other pages over the meeting on Aurora OS 5.1
+
+* Sat Nov 07 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-135
+- Show the package version in the settings
+
+* Sat Nov 07 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-134
+- Keep logins in a file encrypted with a key from Aurora Keystore
+
 * Sat Nov 07 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-133
 - Rename the application to ru.mirea.JitsiClient
 

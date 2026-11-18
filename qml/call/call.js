@@ -1234,7 +1234,7 @@
     function volumeSlider(sheet, p) {
         if (!p.tracks.audio) return;
         const row = el('div', 'sheet-volume');
-        row.appendChild(icon('volume'));
+        row.appendChild(icon('volume-up'));
         const slider = el('input');
         slider.type = 'range';
         slider.min = '0';

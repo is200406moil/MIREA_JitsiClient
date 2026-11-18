@@ -47,6 +47,16 @@ The screens outside a meeting are written in QML (Silica). The meeting screen is
 
 Aurora OS 5.2 and Aurora OS 5.1.
 
+> ## ⚠️ WARNING: AURORA OS 5.1 (GECKO 78)!
+>
+> **❗ Jitsi Meet is made for Chromium based browsers. Aurora OS 5.1 has only the Sailfish WebView on the old Gecko 78 engine, so SOME JITSI SERVERS MAY NOT PASS AUDIO AND VIDEO!**
+>
+> **❗ For example: on meet.jit.si there is no audio or video, while on the OMP server (meet.omp.ru) everything works.**
+>
+> **❗ The codecs of Gecko 78 itself handle modern media poorly: video is decoded in software, so a remote screen share arrives later and in lower quality than in a browser.**
+>
+> **❗ Some features (the camera, the microphone, the whiteboard, screen sharing, sounds and others) work through workarounds: application scripts adapt to Gecko 78 what the engine lacks (see below).**
+
 - **Aurora OS 5.2** uses the Chromium based Aurora WebView. Tested on the emulator 5.2.1.200 x86_64.
 - **Aurora OS 5.1** has only the Gecko based Sailfish WebView (Gecko 78). The same code builds a separate package for it (`webview/gecko`). Tested on the emulator 5.1.1.60 x86_64 and on the KVADRA_T tablet (5.1.1.60 aarch64): joining a meeting, a meeting of two, the camera, the microphone, screen sharing (as a second video track beside the camera), reactions, the raised hand, the whiteboard. lib-jitsi-meet officially supports Firefox 91 and later, so on Gecko 78 the application works around what the engine lacks:
   - the camera is taken by the application (Qt camera) and given to the meeting page frame by frame, since the Gecko camera gives no frames on some devices; the picture size follows what the device manages to encode (up to the server's resolution) and stays upright when the device turns;
@@ -91,9 +101,9 @@ These packages are for Aurora OS 5.2. Packages for Aurora OS 5.1 are in [package
 
 | Package | For |
 |---|---|
-| `ru.mirea.JitsiClient-0.1-162.aarch64.rpm` | 64-bit devices with Aurora OS 5.1 |
-| `ru.mirea.JitsiClient-0.1-162.armv7hl.rpm` | 32-bit devices with Aurora OS 5.1 |
-| `ru.mirea.JitsiClient-0.1-162.x86_64.rpm` | Aurora OS 5.1 emulator |
+| `ru.mirea.JitsiClient-0.1-163.aarch64.rpm` | 64-bit devices with Aurora OS 5.1 |
+| `ru.mirea.JitsiClient-0.1-163.armv7hl.rpm` | 32-bit devices with Aurora OS 5.1 |
+| `ru.mirea.JitsiClient-0.1-163.x86_64.rpm` | Aurora OS 5.1 emulator |
 
 They are signed with the SDK development key, so they install on a device or emulator in developer mode.
 
@@ -138,8 +148,7 @@ A full description is in [doc/project_description.md](doc/project_description.md
 
 ## Known issues and limitations
 
-- **No device testing yet.** The application has been tested on the emulator only.
-- **Screen sharing.** Implemented through StreamCamera but not confirmed: on the emulator, capture starts and no frames arrive.
+- **❗ Aurora OS 5.1 (Gecko 78).** Some servers may not pass audio and video (for example, meet.jit.si), media on Gecko 78 works worse than in Chromium, and some features are made with workaround scripts. See [Compatibility](#compatibility).
 - **Aurora Keystore.** It is unavailable on a regular emulator, so there logins are kept only until the application closes. Work with the store has been tested on the emulator with SoftHSM, bypassing the system CUSE layer. The regular path and TEE have to be tested on a device.
 - **Rejoining.** Without restarting the application, `gum.not_found` for audio sometimes appears. The cause is not known.
 - **Camera preview on the emulator.** The Qt Multimedia render thread sometimes crashes on the screen before joining (`QVideoFrame::unmap`).
