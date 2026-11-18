@@ -78,12 +78,14 @@ CoverBackground {
     }
 
     function openTab(index) {
-        var main = pageStack.find(function(page) { return page.objectName === "mainPage" })
+        var window = __silica_applicationwindow_instance
+        var stack = window.pageStack
+        var main = stack.find(function(page) { return page.objectName === "mainPage" })
         if (main) {
-            pageStack.pop(main, PageStackAction.Immediate)
+            stack.pop(main, PageStackAction.Immediate)
             main.selectedTab = index
         }
-        __silica_applicationwindow_instance.activate()
+        window.activate()
     }
 
     CoverActionList {
