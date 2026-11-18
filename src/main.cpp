@@ -11,6 +11,7 @@
 #endif
 #include "keystoreloginstore.h"
 #include "callcontrol.h"
+#include "fileopener.h"
 
 int main(int argc, char *argv[])
 {
@@ -86,6 +87,11 @@ int main(int argc, char *argv[])
 #endif
     view->rootContext()->setContextProperty(QStringLiteral("appVersion"), QStringLiteral(APP_VERSION " build " APP_RELEASE));
     view->rootContext()->setContextProperty(QStringLiteral("sdkVersion"), QStringLiteral(APP_SDK_VERSION));
+    // Before CallControl takes the service name: a call that started the
+    // application has to find the object.
+    FileOpener fileOpener;
+    if (!fileOpener.registerOnBus()) appState.appendCallLog(QStringLiteral("opening files is not available"));
+    view->rootContext()->setContextProperty(QStringLiteral("fileOpener"), &fileOpener);
     CallControl callControl;
     if (!callControl.registerOnBus()) appState.appendCallLog(QStringLiteral("notification actions are not available"));
     view->rootContext()->setContextProperty(QStringLiteral("callControl"), &callControl);

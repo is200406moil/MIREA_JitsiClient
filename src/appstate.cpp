@@ -14,6 +14,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTcpSocket>
+#include <QTimeZone>
 #include <QTimer>
 #include <QUrl>
 #include <QUuid>
@@ -34,6 +35,7 @@ AppState::AppState(QObject *parent, const QString &settingsFile) : QObject(paren
     // it would not be known which server it may be given to.
     if (m_store.value("liveStreamKey").isValid()) m_store.erase("liveStreamKey");
     m_rooms = m_store.rooms();
+    m_scheduled = QJsonDocument::fromJson(m_store.value("scheduled", "[]").toString().toUtf8()).array().toVariantList();
     connect(&m_http, &QTcpServer::newConnection, this, &AppState::acceptConnection);
     loadStrings();
 }
@@ -99,6 +101,251 @@ QString AppState::avatarUrl() const
 void AppState::copyText(const QString &text)
 {
     QGuiApplication::clipboard()->setText(text);
+}
+
+bool AppState::addScheduled(const QString &input, const QString &title, qint64 start, int minutes, int remind)
+{
+    const QVariantMap room = saveRoom(input, false);
+    if (room.isEmpty()) return false;
+    if (start <= 0 || minutes <= 0 || minutes > 24 * 60 || remind < 0 || remind > 24 * 60) {
+        setError(tr("Проверьте дату и время встречи."));
+        return false;
+    }
+    QVariantMap meeting;
+    meeting["id"] = QUuid::createUuid().toString().mid(1, 36);
+    meeting["room"] = room.value("name");
+    meeting["server"] = room.value("server");
+    meeting["link"] = room.value("server").toString() + "/" + QString::fromLatin1(QUrl::toPercentEncoding(room.value("name").toString()));
+    meeting["title"] = title.trimmed().isEmpty() ? room.value("name").toString() : title.trimmed().left(200);
+    meeting["start"] = start;
+    meeting["minutes"] = minutes;
+    meeting["remind"] = remind;
+    m_scheduled.append(meeting);
+    std::stable_sort(m_scheduled.begin(), m_scheduled.end(), [](const QVariant &a, const QVariant &b) {
+        return a.toMap().value("start").toLongLong() < b.toMap().value("start").toLongLong();
+    });
+    storeScheduled();
+    setError(QString());
+    return true;
+}
+
+void AppState::removeScheduled(const QString &id)
+{
+    for (int i = 0; i < m_scheduled.size(); ++i) {
+        if (m_scheduled.at(i).toMap().value("id").toString() == id) {
+            m_scheduled.removeAt(i);
+            storeScheduled();
+            return;
+        }
+    }
+}
+
+void AppState::storeScheduled()
+{
+    // Meetings that ended more than a day ago are dropped.
+    const qint64 old = QDateTime::currentMSecsSinceEpoch() - 24 * 3600 * 1000LL;
+    for (int i = m_scheduled.size() - 1; i >= 0; --i) {
+        const QVariantMap meeting = m_scheduled.at(i).toMap();
+        if (meeting.value("start").toLongLong() + meeting.value("minutes").toLongLong() * 60000 < old) m_scheduled.removeAt(i);
+    }
+    m_store.setValue("scheduled", QString::fromUtf8(QJsonDocument(QJsonArray::fromVariantList(m_scheduled)).toJson(QJsonDocument::Compact)));
+    emit scheduledChanged();
+}
+
+QString AppState::exportScheduled(const QString &id)
+{
+    QVariantMap meeting;
+    for (const QVariant &entry : m_scheduled) {
+        if (entry.toMap().value("id").toString() == id) meeting = entry.toMap();
+    }
+    if (meeting.isEmpty()) return QString();
+    // RFC 5545: escaped text, CRLF lines, UTC times.
+    auto text = [](QString value) {
+        value.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n");
+        return value;
+    };
+    auto utc = [](qint64 ms) {
+        return QDateTime::fromMSecsSinceEpoch(ms, Qt::UTC).toString("yyyyMMdd'T'HHmmss'Z'");
+    };
+    const qint64 start = meeting.value("start").toLongLong();
+    const qint64 end = start + meeting.value("minutes").toLongLong() * 60000;
+    const QString link = meeting.value("link").toString();
+    QStringList lines {
+        "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//MIREA//Jitsi Meet for Aurora OS//RU", "METHOD:PUBLISH",
+        "BEGIN:VEVENT",
+        "UID:" + meeting.value("id").toString() + "@ru.mirea.JitsiClient",
+        "DTSTAMP:" + utc(QDateTime::currentMSecsSinceEpoch()),
+        "DTSTART:" + utc(start), "DTEND:" + utc(end),
+        "SUMMARY:" + text(meeting.value("title").toString()),
+        "LOCATION:" + text(link), "URL:" + link,
+        "DESCRIPTION:" + text(tr("Встреча Jitsi: %1").arg(link))
+    };
+    const int remind = meeting.value("remind").toInt();
+    if (remind > 0) {
+        lines << "BEGIN:VALARM" << "ACTION:DISPLAY" << QString("TRIGGER:-PT%1M").arg(remind)
+              << "DESCRIPTION:" + text(meeting.value("title").toString()) << "END:VALARM";
+    }
+    lines << "END:VEVENT" << "END:VCALENDAR";
+    QString folder = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    if (folder.isEmpty()) folder = QDir::homePath() + "/Downloads";
+    QDir().mkpath(folder);
+    QString base = meeting.value("title").toString();
+    base.replace(QRegularExpression("[^\\w\\- ]"), "_");
+    const QString path = folder + "/" + base.left(60).trimmed() + ".ics";
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        setError(tr("Не удалось сохранить событие: %1").arg(file.errorString()));
+        return QString();
+    }
+    // Lines longer than 75 octets are folded as RFC 5545 requires.
+    QByteArray data;
+    for (const QString &line : lines) {
+        QByteArray bytes = line.toUtf8();
+        while (bytes.size() > 74) {
+            int cut = 74;
+            while (cut > 0 && (static_cast<unsigned char>(bytes.at(cut)) & 0xC0) == 0x80) --cut;
+            data += bytes.left(cut) + "\r\n ";
+            bytes = bytes.mid(cut);
+        }
+        data += bytes + "\r\n";
+    }
+    file.write(data);
+    file.close();
+    setError(QString());
+    return QUrl::fromLocalFile(path).toString();
+}
+
+QVariantMap AppState::importCalendarFile(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return {{"ok", false}, {"error", tr("Не удалось открыть файл: %1").arg(file.errorString())}};
+    }
+    if (file.size() > 1024 * 1024) return {{"ok", false}, {"error", tr("Файл события слишком большой.")}};
+    return importCalendarText(QString::fromUtf8(file.readAll()));
+}
+
+QVariantMap AppState::importCalendarText(const QString &text)
+{
+    auto fail = [](const QString &error) { return QVariantMap {{"ok", false}, {"error", error}}; };
+    // RFC 5545: unfolded lines, NAME;PARAM=...:VALUE, the first VEVENT.
+    QString unfolded = text;
+    unfolded.replace("\r\n", "\n").replace('\r', '\n');
+    unfolded.replace(QRegularExpression("\n[ \t]"), QString());
+    struct Property { QString name; QMap<QString, QString> params; QString value; };
+    QList<Property> event;
+    bool inEvent = false, inAlarm = false, done = false;
+    int remind = 0;
+    for (const QString &line : unfolded.split('\n')) {
+        if (done || line.isEmpty()) continue;
+        const int colon = line.indexOf(':');
+        if (colon <= 0) continue;
+        const QStringList head = line.left(colon).split(';');
+        Property property { head.first().toUpper(), {}, line.mid(colon + 1) };
+        for (int i = 1; i < head.size(); ++i) {
+            const int eq = head.at(i).indexOf('=');
+            if (eq > 0) property.params.insert(head.at(i).left(eq).toUpper(), head.at(i).mid(eq + 1).remove('"'));
+        }
+        const QString value = property.value.trimmed().toUpper();
+        if (property.name == "BEGIN" && value == "VEVENT") { inEvent = true; continue; }
+        if (!inEvent) continue;
+        if (property.name == "BEGIN" && value == "VALARM") { inAlarm = true; continue; }
+        if (property.name == "END" && value == "VALARM") { inAlarm = false; continue; }
+        if (property.name == "END" && value == "VEVENT") { done = true; continue; }
+        if (inAlarm) {
+            // The first reminder before the start: TRIGGER:-PT10M, -PT1H, -P1D.
+            static const QRegularExpression trigger("^-P(?:(\\d+)D)?(?:T(?:(\\d+)H)?(?:(\\d+)M)?)?");
+            const QRegularExpressionMatch match = trigger.match(property.value.trimmed());
+            if (property.name == "TRIGGER" && match.hasMatch() && !remind) {
+                remind = match.captured(1).toInt() * 1440 + match.captured(2).toInt() * 60 + match.captured(3).toInt();
+            }
+            continue;
+        }
+        event << property;
+    }
+    if (event.isEmpty()) return fail(tr("В файле нет события календаря."));
+
+    auto find = [&event](const QString &name) {
+        for (const Property &property : event) if (property.name == name) return property;
+        return Property();
+    };
+    auto unescape = [](QString value) {
+        value.replace("\\n", "\n").replace("\\N", "\n").replace("\\,", ",").replace("\\;", ";").replace("\\\\", "\\");
+        return value.trimmed();
+    };
+    // A UTC time (…Z), a time in TZID or a floating local time; a date alone
+    // is the start of that day.
+    auto time = [](const Property &property) -> QDateTime {
+        const QString value = property.value.trimmed();
+        if (value.size() == 8) {
+            return QDateTime(QDate::fromString(value, "yyyyMMdd"), QTime(0, 0), Qt::LocalTime);
+        }
+        QDateTime result = QDateTime::fromString(value.left(15), "yyyyMMdd'T'HHmmss");
+        if (!result.isValid()) return QDateTime();
+        if (value.endsWith('Z')) {
+            result.setTimeSpec(Qt::UTC);
+        } else if (property.params.contains("TZID")) {
+            QTimeZone zone(property.params.value("TZID").toUtf8());
+            if (zone.isValid()) result.setTimeZone(zone);
+        }
+        return result;
+    };
+    const QDateTime start = time(find("DTSTART"));
+    if (!start.isValid()) return fail(tr("У события нет времени начала."));
+    QDateTime end = time(find("DTEND"));
+    if (!end.isValid()) {
+        static const QRegularExpression duration("^P(?:(\\d+)D)?(?:T(?:(\\d+)H)?(?:(\\d+)M)?)?");
+        const QRegularExpressionMatch match = duration.match(find("DURATION").value.trimmed());
+        const int minutes = match.hasMatch()
+            ? match.captured(1).toInt() * 1440 + match.captured(2).toInt() * 60 + match.captured(3).toInt() : 60;
+        end = start.addSecs(60LL * (minutes > 0 ? minutes : 60));
+    }
+    static const QRegularExpression linkPattern("https://[^\\s<>\"'\\\\]+", QRegularExpression::CaseInsensitiveOption);
+    QString link;
+    for (const QString &name : {QStringLiteral("URL"), QStringLiteral("LOCATION"), QStringLiteral("DESCRIPTION")}) {
+        const QRegularExpressionMatch match = linkPattern.match(unescape(find(name).value));
+        if (match.hasMatch()) {
+            link = match.captured(0);
+            while (!link.isEmpty() && QStringLiteral(".,;:!?)]}").contains(link.at(link.size() - 1))) link.chop(1);
+            break;
+        }
+    }
+    if (link.isEmpty()) return fail(tr("В событии нет ссылки на встречу."));
+    const QVariantMap room = saveRoom(link, false);
+    if (room.isEmpty()) return fail(lastError());
+
+    const QString uid = unescape(find("UID").value);
+    const QString title = unescape(find("SUMMARY").value);
+    const qint64 startMs = start.toMSecsSinceEpoch();
+    const int minutes = int(qBound<qint64>(1, start.secsTo(end) / 60, 24 * 60));
+    for (int i = 0; i < m_scheduled.size(); ++i) {
+        QVariantMap meeting = m_scheduled.at(i).toMap();
+        if (!uid.isEmpty() && meeting.value("uid").toString() == uid) {
+            // An updated invitation moves the meeting.
+            meeting["start"] = startMs;
+            meeting["minutes"] = minutes;
+            if (!title.isEmpty()) meeting["title"] = title.left(200);
+            m_scheduled[i] = meeting;
+            storeScheduled();
+            return {{"ok", true}, {"duplicate", true}, {"title", meeting.value("title")}, {"start", startMs},
+                    {"link", meeting.value("link")}};
+        }
+    }
+    if (!addScheduled(link, title, startMs, minutes, remind)) return fail(lastError());
+    // The meeting just added (addScheduled sorts the list) keeps the UID.
+    const QString added = room.value("server").toString() + "/" + QString::fromLatin1(QUrl::toPercentEncoding(room.value("name").toString()));
+    for (int i = 0; i < m_scheduled.size(); ++i) {
+        QVariantMap meeting = m_scheduled.at(i).toMap();
+        if (meeting.value("start").toLongLong() == startMs && meeting.value("link").toString() == added
+                && meeting.value("uid").toString().isEmpty()) {
+            meeting["uid"] = uid;
+            m_scheduled[i] = meeting;
+            break;
+        }
+    }
+    storeScheduled();
+    return {{"ok", true}, {"duplicate", false}, {"title", title.isEmpty() ? room.value("name") : QVariant(title)},
+            {"start", startMs}, {"link", added}};
 }
 
 QVariantList AppState::rooms() const

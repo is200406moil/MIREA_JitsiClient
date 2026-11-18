@@ -40,6 +40,10 @@ class AppState : public QObject
     Q_PROPERTY(bool videoMuted READ videoMuted NOTIFY settingsChanged)
     Q_PROPERTY(QVariantMap preferences READ preferences NOTIFY settingsChanged)
     Q_PROPERTY(QVariantList rooms READ rooms NOTIFY roomsChanged)
+    // Meetings planned in the application (Calendar tab): the system
+    // calendar is closed to applications, the Calendar permission is not
+    // allowed for them.
+    Q_PROPERTY(QVariantList scheduled READ scheduled NOTIFY scheduledChanged)
     Q_PROPERTY(QString meetingUrl READ meetingUrl NOTIFY meetingChanged)
     Q_PROPERTY(QString meetingOrigin READ meetingOrigin NOTIFY meetingChanged)
     Q_PROPERTY(QString lastError READ lastError NOTIFY errorChanged)
@@ -58,6 +62,7 @@ public:
     bool videoMuted() const;
     QVariantMap preferences() const;
     QVariantList rooms() const;
+    QVariantList scheduled() const { return m_scheduled; }
     QString meetingUrl() const { return m_meetingUrl; }
     QString meetingOrigin() const { return m_meetingOrigin; }
     QString lastError() const { return m_error; }
@@ -68,6 +73,22 @@ public:
     Q_INVOKABLE QString roomSection(qint64 timestamp) const;
     Q_INVOKABLE QVariantMap saveRoom(const QString &input, bool remember = true);
     Q_INVOKABLE void removeRoom(const QString &id);
+    // A planned meeting: the room name or link, a title (the room name when
+    // empty), the start (ms since 1970), the length and the reminder (minutes
+    // before, 0 for none). False with lastError on a bad room.
+    Q_INVOKABLE bool addScheduled(const QString &input, const QString &title, qint64 start, int minutes, int remind);
+    Q_INVOKABLE void removeScheduled(const QString &id);
+    // Writes the meeting as an iCalendar file (with the reminder) to the
+    // Downloads folder for the system calendar to import; its file:// URL,
+    // empty with lastError on failure.
+    Q_INVOKABLE QString exportScheduled(const QString &id);
+    // Puts the first event of an iCalendar file (an invitation) into the
+    // planned meetings: its title, time, reminder and the meeting link found
+    // in URL, LOCATION or DESCRIPTION. {ok, title, start, link, duplicate},
+    // or {ok: false, error}.
+    Q_INVOKABLE QVariantMap importCalendarFile(const QString &path);
+    // The same for the text of a file (the unit tests).
+    QVariantMap importCalendarText(const QString &text);
     Q_INVOKABLE void importLegacy(const QString &json, const QString &name);
     Q_INVOKABLE bool startMeeting(const QVariantMap &room, bool muteAudio, bool muteVideo, bool audioOnly = false);
     Q_INVOKABLE void appendCallLog(const QString &message);
@@ -92,6 +113,7 @@ signals:
     void settingsChanged();
     void interfaceLanguageChanged();
     void roomsChanged();
+    void scheduledChanged();
     void meetingChanged();
     void errorChanged();
     void conferenceEvent(const QString &name, const QVariantMap &data);
@@ -113,6 +135,8 @@ private:
     ScreenShareState m_screenShare = ScreenShareNone;
     LoginStore *m_logins = nullptr;
     QVariantList m_rooms;
+    QVariantList m_scheduled;
+    void storeScheduled();
     QVariantMap m_activeRoom;
     qint64 m_meetingStarted = 0;
     QByteArray m_meetingHtml;

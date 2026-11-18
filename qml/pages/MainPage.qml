@@ -47,6 +47,7 @@ Page {
             onLoaded: {
                 if (item.openRoom) item.openRoom.connect(page.prepareRoom)
                 if (item.roomMenu) item.roomMenu.connect(function(room) { roomSheet.open(room) })
+                if (item.meetingMenu) item.meetingMenu.connect(function(meeting) { meetingSheet.open(meeting) })
             }
         }
         BottomNavigation {
@@ -75,6 +76,24 @@ Page {
             anchors.fill: parent
             onRemoveRequested: appState.removeRoom(room.id)
             onInfoRequested: pageStack.push(Qt.resolvedUrl("DialInInfoPage.qml"), {room: room})
+        }
+        // The same sheet for a planned meeting of the Calendar tab.
+        RoomMenuSheet {
+            id: meetingSheet
+            anchors.fill: parent
+            actions: [
+                { icon: "share", label: qsTr("Поделиться приглашением"), action: "share" },
+                { icon: "calendar", label: qsTr("Открыть в календаре Авроры…"), action: "calendar" },
+                { icon: "trash", label: appState.t("dialog.Remove"), action: "remove" }
+            ]
+            subtitleOf: function(meeting) {
+                return Qt.formatDateTime(new Date(meeting.start), "d MMMM, HH:mm") + " – "
+                        + Qt.formatTime(new Date(meeting.start + meeting.minutes * 60000), "HH:mm")
+            }
+            onActionRequested: {
+                if (action === "remove") appState.removeScheduled(room.id)
+                else if (pane.item && pane.item.meetingAction) pane.item.meetingAction(action, room)
+            }
         }
     }
 }

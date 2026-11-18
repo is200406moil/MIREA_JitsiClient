@@ -5,9 +5,13 @@ Icon=ru.mirea.JitsiClient
 Exec=/usr/bin/ru.mirea.JitsiClient
 Name=Jitsi Meet
 Name[ru]=Jitsi Meet
+MimeType=text/calendar;text/x-vcalendar;
+X-Maemo-Service=ru.mirea.JitsiClient
+X-Maemo-Object-Path=/ru/mirea/JitsiClient
+X-Maemo-Method=ru.mirea.JitsiClient.openFile
 
 [X-Application]
-Permissions=Camera;Internet;Microphone;WebView;DeviceInfo;ScreenCapture
+Permissions=Camera;Internet;Microphone;WebView;DeviceInfo;ScreenCapture;Downloads;UserDirs
 OrganizationName=ru.mirea
 ApplicationName=JitsiClient
 ExecDBus=/usr/bin/ru.mirea.JitsiClient

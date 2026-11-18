@@ -33,7 +33,8 @@ A Jitsi Meet video conferencing client for smartphones running Aurora OS 5. The 
 
 - **Rooms.** A room name or link, meeting history by date, a room menu (removal, dial-in numbers), a warning about an insecure room name.
 - **Profile.** Name and email, a Gravatar avatar that other participants see.
-- **Meeting.** Camera, microphone, camera switching, tile view, chat and private messages, polls, reactions, GIFs (GIPHY), raised hand, whiteboard, shared YouTube video, speaker statistics, audio-only mode, recording and subtitles on servers that have them. Audio level rings appear around the avatar of the speaker on the main view. A connection indicator appears on the tile of a participant with a poor connection, red or yellow, and disappears when the connection is stable again.
+- **Calendar.** Meetings planned in the application by day, joined with a tap, with a reminder while the application runs. A meeting can be shared as an invitation (.ics: mail, messengers, Bluetooth) or opened in the Aurora calendar; an invitation .ics opened with the application ("Open with") adds the meeting.
+- **Meeting.** Camera, microphone, camera switching, tile view, chat with private messages (a recipient picker), search and emoji, polls, reactions, GIFs (GIPHY), raised hand, whiteboard, shared YouTube video, speaker statistics, audio-only mode, recording and subtitles on servers that have them. Audio level rings appear around the avatar of the speaker on the main view. A connection indicator appears on the tile of a participant with a poor connection, red or yellow, and disappears when the connection is stable again.
 - **Moderation.** Actions on participants, mute everyone with audio moderation, lobby, room password, breakout rooms, visitors, chat restrictions, follow me.
 - **Live streaming** to YouTube by stream key.
 - **Protected servers.** A login and password (Prosody) or an organizer token (JWT). They are kept in a file encrypted with a key from Aurora Keystore, and the next meetings open without asking again.
@@ -90,9 +91,9 @@ These packages are for Aurora OS 5.2. Packages for Aurora OS 5.1 are in [package
 
 | Package | For |
 |---|---|
-| `ru.mirea.JitsiClient-0.1-157.aarch64.rpm` | 64-bit devices with Aurora OS 5.1 |
-| `ru.mirea.JitsiClient-0.1-157.armv7hl.rpm` | 32-bit devices with Aurora OS 5.1 |
-| `ru.mirea.JitsiClient-0.1-157.x86_64.rpm` | Aurora OS 5.1 emulator |
+| `ru.mirea.JitsiClient-0.1-160.aarch64.rpm` | 64-bit devices with Aurora OS 5.1 |
+| `ru.mirea.JitsiClient-0.1-160.armv7hl.rpm` | 32-bit devices with Aurora OS 5.1 |
+| `ru.mirea.JitsiClient-0.1-160.x86_64.rpm` | Aurora OS 5.1 emulator |
 
 They are signed with the SDK development key, so they install on a device or emulator in developer mode.
 
@@ -149,7 +150,7 @@ A full description is in [doc/project_description.md](doc/project_description.md
 - **Files in chat.** Not implemented. The `fileSharing` feature exists only in the Jitsi web client and needs separate server setup.
 - **Launch.** On the emulator the application sometimes opens minimized, on its cover (1 time out of 3 in the check). The cause is not known.
 - **Recording and subtitles.** The buttons appear when the server enables them. They follow the Jitsi sources but have not been tested with a real Jibri or transcriber: the request reaches the test server and is refused, because it has neither service. Choosing a language, translated subtitles and recording sounds are not implemented.
-- **Calendar.** The tab is always empty. Reading Aurora OS events needs the `Calendar` permission, and a package with it fails the validator and does not install.
+- **Calendar.** The tab shows the meetings planned in the application, not the events of the Aurora calendar: reading or writing them needs the `Calendar` permission, which no validator profile allows. Meetings go to the Aurora calendar as .ics files, which the calendar imports after a confirmation.
 
 Test details are in [doc/testing.md](doc/testing.md) (in Russian).
 

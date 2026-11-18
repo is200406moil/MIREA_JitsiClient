@@ -10,8 +10,16 @@ Item {
     id: sheet
     property var room: null
     property var shownRoom: null
+    // The rows (icon, label, action) and the second line of the header; the
+    // Calendar tab uses the sheet with its own (MainPage).
+    property var actions: [
+        { icon: "trash", label: appState.t("welcomepage.recentListDelete"), action: "remove" },
+        { icon: "info", label: appState.t("welcomepage.info"), action: "info" }
+    ]
+    property var subtitleOf: function(room) { return appState.roomDate(room.lastUsed) }
     signal removeRequested(var room)
     signal infoRequested(var room)
+    signal actionRequested(string action, var room)
     visible: shownRoom !== null
     z: 100
 
@@ -74,7 +82,7 @@ Item {
                     Label {
                         width: parent.width
                         visible: text.length > 0
-                        text: sheet.shownRoom ? appState.roomDate(sheet.shownRoom.lastUsed) : ""
+                        text: sheet.shownRoom ? sheet.subtitleOf(sheet.shownRoom) : ""
                         color: AppStyle.muted
                         font.pixelSize: 12
                         truncationMode: TruncationMode.Fade
@@ -89,10 +97,7 @@ Item {
             }
 
             Repeater {
-                model: [
-                    { icon: "trash", label: appState.t("welcomepage.recentListDelete"), action: "remove" },
-                    { icon: "info", label: appState.t("welcomepage.info"), action: "info" }
-                ]
+                model: sheet.actions
                 // .sheet-item
                 // A plain MouseArea: Silica's BackgroundItem paints its own
                 // highlight background.
@@ -104,7 +109,8 @@ Item {
                         var room = sheet.room
                         sheet.close()
                         if (modelData.action === "remove") sheet.removeRequested(room)
-                        else sheet.infoRequested(room)
+                        else if (modelData.action === "info") sheet.infoRequested(room)
+                        sheet.actionRequested(modelData.action, room)
                     }
                     Item {
                         id: iconBox

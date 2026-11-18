@@ -52,6 +52,7 @@ SOURCES += \
     src/main.cpp \
     src/appstate.cpp \
     src/callcontrol.cpp \
+    src/fileopener.cpp \
     src/keystoreloginstore.cpp \
     src/keystorekey.cpp \
     src/screencapture.cpp \
@@ -60,6 +61,7 @@ SOURCES += \
 HEADERS += \
     src/appstate.h \
     src/callcontrol.h \
+    src/fileopener.h \
     src/clienttranslator.h \
     src/keystoreloginstore.h \
     src/keystorekey.h \
