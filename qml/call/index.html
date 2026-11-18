@@ -54,13 +54,17 @@
             <button data-tab="cc"></button>
         </nav>
         <div id="chat-pane" class="chat-pane">
+        <input id="chat-search" class="field search chat-search" autocomplete="off" hidden>
         <div id="chat-messages" class="chat-messages"></div>
         <div id="chat-recipient" class="chat-recipient" hidden>
             <span id="chat-recipient-text"></span>
             <button class="header-button" data-action="clear-recipient"><i class="icon" data-icon="close-large"></i></button>
         </div>
         <div id="chat-disabled" class="chat-disabled" data-t="chat.disabled" hidden></div>
+        <div id="chat-smileys" class="chat-smileys" hidden></div>
         <form id="chat-form" class="chat-input">
+            <button id="chat-to" class="chat-to" type="button"><i class="icon" data-icon="users"></i></button>
+            <button id="chat-smiley" class="chat-to" type="button"><i class="icon" data-icon="face-smile"></i></button>
             <input id="chat-input" autocomplete="off" enterkeyhint="send">
             <button id="chat-send" class="send" type="submit" disabled><i class="icon" data-icon="send"></i></button>
         </form>

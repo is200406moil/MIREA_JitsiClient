@@ -90,9 +90,9 @@ These packages are for Aurora OS 5.2. Packages for Aurora OS 5.1 are in [package
 
 | Package | For |
 |---|---|
-| `ru.mirea.JitsiClient-0.1-155.aarch64.rpm` | 64-bit devices with Aurora OS 5.1 |
-| `ru.mirea.JitsiClient-0.1-155.armv7hl.rpm` | 32-bit devices with Aurora OS 5.1 |
-| `ru.mirea.JitsiClient-0.1-155.x86_64.rpm` | Aurora OS 5.1 emulator |
+| `ru.mirea.JitsiClient-0.1-156.aarch64.rpm` | 64-bit devices with Aurora OS 5.1 |
+| `ru.mirea.JitsiClient-0.1-156.armv7hl.rpm` | 32-bit devices with Aurora OS 5.1 |
+| `ru.mirea.JitsiClient-0.1-156.x86_64.rpm` | Aurora OS 5.1 emulator |
 
 They are signed with the SDK development key, so they install on a device or emulator in developer mode.
 

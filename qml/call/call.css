@@ -212,6 +212,19 @@ h1 { margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; }
 .chat-input input { flex: 1; height: 40px; border-radius: var(--radius); border: 0; outline: 0; padding: 0 12px;
     background: var(--ui02); user-select: text; }
 .chat-input input::placeholder { color: var(--text03); }
+.chat-to { flex: none; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
+    border-radius: var(--radius); background: var(--ui02); }
+.chat-to.private { background: var(--private); }
+.chat-to[hidden] { display: none; }
+.chat-to.active { background: var(--ui03); }
+.chat-smileys { flex: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 4px;
+    max-height: 144px; overflow-y: auto; padding: 8px 16px; background: var(--ui01); border-top: 1px solid var(--ui02); }
+.chat-smileys[hidden] { display: none; }
+.chat-smileys .smiley { height: 44px; font-size: 26px; border-radius: var(--radius); }
+.chat-smileys .smiley:active { background: var(--ui03); }
+.field.search.chat-search { flex: none; width: auto; margin: 8px 16px 0; }
+.chat-search[hidden] { display: none; }
+.sheet-item.selected { font-weight: 600; }
 .send { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius);
     color: var(--action01); }
 .send:disabled { color: var(--text03); }
@@ -232,6 +245,10 @@ h1 { margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; }
 .breakout-button { width: calc(100% - 32px); margin: 8px 16px 0; }
 .breakout-room { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 48px; font-weight: 600; text-align: left; }
 .breakout-participant { padding-left: 28px; }
+button.breakout-participant { width: 100%; border: 0; background: none; color: inherit; font: inherit; text-align: left; }
+button.breakout-participant:active { background: var(--ui03); }
+.breakout-participant .go { margin-left: auto; transform: rotate(180deg); opacity: .7; }
+.sheet-subtitle { padding: 0 16px 8px; color: var(--text02); font-size: 14px; }
 .breakout-footer { display: flex; flex-direction: column; gap: 8px; padding: 8px 16px calc(8px + env(safe-area-inset-bottom)); background: var(--ui01); }
 .breakout-footer .button.wide { margin-top: 0; }
 .participants-footer { display: flex; gap: 8px; padding: 8px 16px calc(8px + env(safe-area-inset-bottom)); background: var(--ui01); }

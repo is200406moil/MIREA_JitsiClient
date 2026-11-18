@@ -946,9 +946,15 @@
         if (!state.messages.length) {
             list.appendChild(el('div', 'chat-empty', t('chat.noMessagesMessage')));
         }
+        // Search over the text and the author of the messages.
+        $('chat-search').hidden = !state.messages.length;
+        const query = (state.chatFilter || '').trim().toLowerCase();
+        const messages = query ? state.messages.filter(message => (message.text || '').toLowerCase().includes(query)
+            || (message.name || '').toLowerCase().includes(query)) : state.messages;
+        if (query && !messages.length) list.appendChild(el('div', 'chat-empty', t('addPeople.noResults')));
         let group = null;
         let lastKey = '';
-        state.messages.forEach(message => {
+        messages.forEach(message => {
             const key = message.from + '|' + (message.privateTo || message.privateFrom ? 'p' : '');
             if (!group || key !== lastKey) {
                 group = el('div', 'message-group' + (message.local ? ' local' : ''));
@@ -975,17 +981,23 @@
         list.scrollTop = list.scrollHeight;
         const recipient = state.privateRecipient && person(state.privateRecipient);
         $('chat-recipient').hidden = !recipient;
+        $('chat-to').classList.toggle('private', !!recipient);
+        $('chat-to').hidden = !state.remotes.size;
         if (recipient) $('chat-recipient-text').textContent = t('chat.messageTo', { recipient: displayNameOf(recipient) });
     }
 
     function addMessage(message) {
         const gifUrl = gifFromMessage(message.text);
-        if (gifUrl && !message.privateTo && !message.privateFrom && gifDisplayMode() !== 'chat') showGifOnTile(message.from, gifUrl);
-        if (gifUrl && gifDisplayMode() === 'tile') return;
+        // Messages of the room history (sent on joining) go to the chat only:
+        // no GIF on a tile, no sound and no notification, as in jitsi-meet.
+        if (gifUrl && !message.history && !message.privateTo && !message.privateFrom && gifDisplayMode() !== 'chat') {
+            showGifOnTile(message.from, gifUrl);
+        }
+        if (gifUrl && gifDisplayMode() === 'tile' && !message.history) return;
         state.messages.push(message);
-        if (!message.local) playSound('message');
+        if (!message.local && !message.history) playSound('message');
         if (state.screen === 'chat' && state.chatTab === 'chat') renderChat();
-        else if (!message.local) {
+        else if (!message.local && !message.history) {
             state.unread++;
             if (prefs.chatNotifications !== false) {
                 showNotification({ title: message.name, description: gifUrl ? t('notify.gifsMenu') : message.text, onClick: () => openScreen('chat') });
@@ -1011,6 +1023,24 @@
     function startPrivateChat(id) {
         state.privateRecipient = id;
         openScreen('chat');
+    }
+
+    // The recipient picker of the chat (jitsi-meet web: "Send to"): everyone,
+    // or one participant for a private message.
+    function openRecipientPicker() {
+        $('chat-input').blur();
+        openSheet(sheet => {
+            sheet.appendChild(el('div', 'sheet-title', t('chat.sendButton')));
+            sheetItem(sheet, 'users', t('chat.everyone'), () => { state.privateRecipient = null; renderChat(); },
+                state.privateRecipient ? '' : 'selected');
+            [...state.remotes.values()]
+                .filter(p => !p.hidden && !chatSendDisabledFor(p.id))
+                .sort((a, b) => displayNameOf(a).localeCompare(displayNameOf(b)))
+                .forEach(p => {
+                    sheetItem(sheet, 'message', displayNameOf(p), () => { state.privateRecipient = p.id; renderChat(); },
+                        state.privateRecipient === p.id ? 'selected' : '');
+                });
+        });
     }
 
     // ----------------------------------------------------------- participants
@@ -3643,7 +3673,8 @@
     function roomParticipants(room) {
         return Object.entries(room.participants || {})
             .filter(([key, p]) => !key.endsWith('/focus') && !(p.jid || '').startsWith('focus@'))
-            .map(([, p]) => p);
+            // The MUC JID is kept: sendParticipantToRoom finds the participant by it.
+            .map(([key, p]) => Object.assign({ key }, p));
     }
 
     function createBreakoutRoom() {
@@ -3774,6 +3805,24 @@
         });
     }
 
+    // The participant menu of the breakout rooms list (jitsi-meet:
+    // RoomParticipantContextMenu): a moderator sends the participant to
+    // another room; for oneself it is joining that room.
+    function openBreakoutParticipantMenu(p, currentRoom) {
+        const others = Object.values(state.breakoutRooms).filter(room => room.id !== currentRoom.id);
+        if (!others.length) return;
+        const resource = (p.key || '').split('/')[1] || '';
+        const self = !!state.conference && resource === state.conference.myUserId();
+        openSheet(sheet => {
+            sheet.appendChild(el('div', 'sheet-title', p.displayName || t('notify.somebody')));
+            sheet.appendChild(el('div', 'sheet-subtitle', t(self ? 'breakoutRooms.actions.join' : 'breakoutRooms.actions.sendToBreakoutRoom')));
+            others.forEach(room => {
+                const label = room.isMainRoom ? t('breakoutRooms.mainRoom') : room.name;
+                sheetItem(sheet, null, label, () => (self ? moveToRoom(room.id) : sendParticipantToRoom(p.key, room.id)));
+            });
+        });
+    }
+
     function renderBreakoutRooms() {
         const list = $('breakout-list');
         list.textContent = '';
@@ -3792,12 +3841,15 @@
             list.appendChild(header);
             if (!room.collapsed) {
                 participants.forEach(p => {
-                    const item = el('div', 'participant-item breakout-participant');
+                    const movable = isModerator() && Object.keys(state.breakoutRooms).length > 1;
+                    const item = el(movable ? 'button' : 'div', 'participant-item breakout-participant');
+                    if (movable) item.addEventListener('click', () => openBreakoutParticipantMenu(p, room));
                     item.appendChild(avatar({ name: p.displayName }));
                     const details = el('div', 'details');
                     details.appendChild(el('div', 'name', p.displayName || t('notify.somebody')));
                     if (p.role === 'moderator') details.appendChild(el('div', 'role', t('videothumbnail.moderator')));
                     item.appendChild(details);
+                    if (movable) { const go = icon('arrow-back', 'medium'); go.classList.add('go'); item.appendChild(go); }
                     list.appendChild(item);
                 });
             }
@@ -4125,13 +4177,14 @@
         on(C.MESSAGE_RECEIVED, (id, text, ts, nick) => {
             const local = id === state.localId;
             const p = person(id);
+            // A time stamp comes with the room history sent on joining.
             addMessage({ local, from: id, name: local ? displayNameOf(state.local) : (p ? displayNameOf(p) : (nick || t('notify.somebody'))),
-                text, ts: ts ? new Date(ts).getTime() || Date.now() : Date.now() });
+                text, ts: ts ? new Date(ts).getTime() || Date.now() : Date.now(), history: !!ts });
         });
         on(C.PRIVATE_MESSAGE_RECEIVED, (id, text, ts) => {
             const p = person(id);
             addMessage({ local: false, from: id, name: p ? displayNameOf(p) : t('notify.somebody'), text,
-                ts: ts ? new Date(ts).getTime() || Date.now() : Date.now(), privateFrom: id });
+                ts: ts ? new Date(ts).getTime() || Date.now() : Date.now(), privateFrom: id, history: !!ts });
         });
         on(C.PARTICIPANT_PROPERTY_CHANGED, (participant, name, oldValue, value) => {
             if (name !== 'raisedHand') return;
@@ -4659,11 +4712,39 @@
         search.addEventListener('input', () => { state.participantFilter = search.value; renderParticipants(); });
         const input = $('chat-input');
         input.placeholder = t('chat.fieldPlaceHolder');
+        // The smileys panel of jitsi-meet (chat/smileys.ts): a tap puts the
+        // emoji where the cursor is; the panel stays open.
+        const SMILEYS = ['🙂', '🙁', '😄', '👍', '😛', '👋', '😊', '😂', '😲', '😘', '👎', '🔎', '❤️', '😳',
+            '😠', '😇', '🤒', '😢', '💣', '⏰', '😎', '😕', '😉', '🍺', '🍰', '🎉', '👏', '🙏', '🔥', '✅'];
+        const smileys = $('chat-smileys');
+        SMILEYS.forEach(emoji => {
+            const button = el('button', 'smiley', emoji);
+            button.type = 'button';
+            button.addEventListener('click', () => {
+                const start = input.selectionStart != null ? input.selectionStart : input.value.length;
+                const end = input.selectionEnd != null ? input.selectionEnd : start;
+                input.value = input.value.slice(0, start) + emoji + input.value.slice(end);
+                input.selectionStart = input.selectionEnd = start + emoji.length;
+                $('chat-send').disabled = !input.value.trim();
+            });
+            smileys.appendChild(button);
+        });
+        $('chat-smiley').addEventListener('click', () => {
+            smileys.hidden = !smileys.hidden;
+            $('chat-smiley').classList.toggle('active', !smileys.hidden);
+            if (!smileys.hidden) input.blur();
+        });
+        const chatSearch = $('chat-search');
+        chatSearch.placeholder = t('speakerStats.search');
+        chatSearch.addEventListener('input', () => { state.chatFilter = chatSearch.value; renderChat(); });
+        $('chat-to').addEventListener('click', openRecipientPicker);
         input.addEventListener('input', () => { $('chat-send').disabled = !input.value.trim(); });
         $('chat-form').addEventListener('submit', event => {
             event.preventDefault();
             sendChat(input.value);
             input.value = '';
+            $('chat-smileys').hidden = true;
+            $('chat-smiley').classList.remove('active');
             $('chat-send').disabled = true;
         });
         // The meeting is opened from QML, so the page may start without a user
