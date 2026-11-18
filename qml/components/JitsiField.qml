@@ -13,10 +13,18 @@ Column {
     property string placeholderText
     property bool centered: false
     property bool error: false
+    // An emoji button at the right of the field (EmojiPickerPage); the system
+    // keyboard of Aurora OS has no emoji.
+    property bool emoji: false
     readonly property bool fieldActiveFocus: editor.activeFocus
     signal accepted()
     function focusEditor() { editor.forceActiveFocus() }
     function blurEditor() { editor.focus = false; Qt.inputMethod.hide() }
+    function insertText(value) {
+        var at = editor.cursorPosition
+        editor.insert(at, value)
+        editor.cursorPosition = at + value.length
+    }
     width: parent ? parent.width : 240
     spacing: 8
 
@@ -39,7 +47,7 @@ Column {
 
         TextInput {
             id: editor
-            anchors { fill: parent; leftMargin: 24; rightMargin: 24 }
+            anchors { fill: parent; leftMargin: 24; rightMargin: field.emoji ? 56 : 24 }
             verticalAlignment: TextInput.AlignVCenter
             horizontalAlignment: field.centered ? TextInput.AlignHCenter : TextInput.AlignLeft
             color: AppStyle.text
@@ -50,8 +58,27 @@ Column {
             selectByMouse: true
             onAccepted: field.accepted()
         }
+        BackgroundItem {
+            visible: field.emoji
+            anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: 4 }
+            width: 48
+            height: 48
+            Icon {
+                // Drawn at the final size; the screen is scaled up by AppStyle.dp.
+                sourceSize: Qt.size(Math.ceil(width * AppStyle.dp), Math.ceil(height * AppStyle.dp))
+                anchors.centerIn: parent
+                width: 24
+                height: 24
+                source: Qt.resolvedUrl("../icons/face-smile.svg")
+                color: AppStyle.text
+            }
+            onClicked: {
+                field.blurEditor()
+                pageStack.push(Qt.resolvedUrl("EmojiPickerPage.qml"), { field: field })
+            }
+        }
         Label {
-            anchors { fill: parent; leftMargin: 24; rightMargin: 24 }
+            anchors { fill: parent; leftMargin: 24; rightMargin: field.emoji ? 56 : 24 }
             verticalAlignment: Text.AlignVCenter
             horizontalAlignment: field.centered ? Text.AlignHCenter : Text.AlignLeft
             text: field.placeholderText

@@ -580,13 +580,14 @@ void AppState::handleRequest(QTcpSocket *socket)
         // Static files of the call page (qml/call). Only plain relative
         // paths inside that directory are served.
         const QString path = QString::fromUtf8(request[1].mid(route.size()));
-        static const QRegularExpression allowed("^[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+)*\\.(js|css|svg|json|png)$");
+        static const QRegularExpression allowed("^[A-Za-z0-9_-]+(/[A-Za-z0-9_.-]+)*\\.(js|css|svg|json|png|ttf)$");
         if (allowed.match(path).hasMatch() && !path.contains("..")) {
             QFile asset(Aurora::Application::pathTo("qml/call/" + path).toLocalFile());
             if (asset.open(QIODevice::ReadOnly)) {
                 static const QHash<QString, QByteArray> types {
                     {"js", "text/javascript; charset=utf-8"}, {"css", "text/css; charset=utf-8"},
-                    {"svg", "image/svg+xml"}, {"json", "application/json; charset=utf-8"}, {"png", "image/png"}
+                    {"svg", "image/svg+xml"}, {"json", "application/json; charset=utf-8"}, {"png", "image/png"},
+                    {"ttf", "font/ttf"}
                 };
                 sendResponse(socket, 200, types.value(path.section('.', -1)), asset.readAll());
                 return;

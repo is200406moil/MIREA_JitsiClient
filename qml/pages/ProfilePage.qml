@@ -68,6 +68,7 @@ Page {
                     label: appState.t("settingsView.displayName")
                     text: appState.displayName
                     placeholderText: appState.t("settingsView.displayNamePlaceholderText")
+                    emoji: true
                     onAccepted: emailField.focusEditor()
                 }
                 Item { width: 1; height: 24 }

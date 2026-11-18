@@ -1,0 +1,8 @@
+Twemoji Mozilla (TwemojiMozilla.ttf), version 0.7.0
+https://github.com/mozilla/twemoji-colr
+
+The emoji graphics are Twemoji, Copyright 2019 Twitter, Inc and other
+contributors, licensed under CC-BY 4.0:
+https://creativecommons.org/licenses/by/4.0/
+
+The font is built from them by Mozilla (twemoji-colr, MIT license).

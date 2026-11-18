@@ -174,6 +174,7 @@ Page {
                     width: parent.width
                     text: appState.displayName
                     placeholderText: appState.t("dialog.enterDisplayName")
+                    emoji: true
                     onAccepted: page.join(false)
                 }
                 Item { width: 1; height: 24 }

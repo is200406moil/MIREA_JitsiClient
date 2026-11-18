@@ -3258,7 +3258,7 @@
             input.placeholder = placeholder;
             input.value = value;
             input.addEventListener('input', () => onInput(input.value));
-            box.appendChild(input);
+            box.appendChild(withEmoji(input));
             if (errorText !== undefined) {
                 const error = el('span', 'field-error', errorText);
                 box.appendChild(error);
@@ -3741,7 +3741,7 @@
             dialog.appendChild(el('div', 'dialog-title', t('dialog.renameBreakoutRoomTitle')));
             const input = el('input', 'field');
             input.value = room.name || '';
-            dialog.appendChild(input);
+            dialog.appendChild(withEmoji(input));
             dialogActions(dialog, [
                 { label: t('dialog.Cancel'), onClick: closeDialog },
                 { label: t('dialog.Ok'), type: 'primary', onClick: () => {
@@ -3910,6 +3910,115 @@
 
     function invite() {
         notify('invite', { url: cfg.inviteUrl });
+    }
+
+    // ------------------------------------------------------------------ emoji
+
+    // The emoji panel of the text fields of the meeting (the system keyboard
+    // of Aurora OS has no emoji): the most used emoji first (counted on this
+    // device, starting from the smileys of jitsi-meet, chat/smileys.ts), all
+    // of them by category on the other tabs (emoji-list.js, the emoji of the
+    // bundled Twemoji Mozilla font). A tap puts the emoji where the cursor
+    // is; the panel stays open.
+    const DEFAULT_EMOJI = ['🙂', '😂', '👍', '❤️', '😊', '🙁', '😄', '👋', '😛', '😘', '😲', '😢', '😎', '😉',
+        '🙏', '👏', '🎉', '🔥', '✅', '👎', '😇', '😕', '😳', '😠', '🤒', '💣', '⏰', '🍺', '🍰', '🔎'];
+    const EMOJI_TABS = [['recent', '🕘'], ['smileys', '😀'], ['people', '👋'], ['nature', '🐶'], ['food', '🍎'],
+        ['activities', '⚽'], ['travel', '✈️'], ['objects', '💡'], ['symbols', '🔣'], ['flags', '🏳️']];
+    const EMOJI_USAGE_KEY = 'aurora-emoji-usage';
+    let emojiUsage = null;
+
+    function emojiUsageMap() {
+        if (!emojiUsage) {
+            try { emojiUsage = JSON.parse(localStorage.getItem(EMOJI_USAGE_KEY) || '{}') || {}; } catch (error) { emojiUsage = {}; }
+        }
+        return emojiUsage;
+    }
+
+    function recentEmoji() {
+        const usage = emojiUsageMap();
+        const used = Object.keys(usage).sort((a, b) => usage[b] - usage[a]);
+        return used.concat(DEFAULT_EMOJI.filter(emoji => !used.includes(emoji))).slice(0, 40);
+    }
+
+    // Builds the panel into container (hidden until toggled) for the input;
+    // onChange runs after an emoji is put in.
+    function emojiPanel(container, input, onChange) {
+        container.classList.add('emoji-panel');
+        container.hidden = true;
+        const tabs = el('div', 'emoji-tabs');
+        const grid = el('div', 'emoji-grid');
+        container.appendChild(tabs);
+        container.appendChild(grid);
+        let tab = 'recent';
+        const data = window.AURORA_EMOJI || {};
+        const insert = emoji => {
+            const start = input.selectionStart != null ? input.selectionStart : input.value.length;
+            const end = input.selectionEnd != null ? input.selectionEnd : start;
+            const value = input.value.slice(0, start) + emoji + input.value.slice(end);
+            if (input.maxLength > 0 && value.length > input.maxLength) return;
+            input.value = value;
+            input.selectionStart = input.selectionEnd = start + emoji.length;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            const usage = emojiUsageMap();
+            usage[emoji] = (usage[emoji] || 0) + 1;
+            try { localStorage.setItem(EMOJI_USAGE_KEY, JSON.stringify(usage)); } catch (error) { /* private mode */ }
+            if (onChange) onChange();
+        };
+        const render = () => {
+            tabs.querySelectorAll('button').forEach(button => button.classList.toggle('active', button.dataset.tab === tab));
+            grid.textContent = '';
+            const fragment = document.createDocumentFragment();
+            (tab === 'recent' ? recentEmoji() : (data[tab] || [])).forEach(emoji => {
+                const button = el('button', 'smiley', emoji);
+                button.type = 'button';
+                button.addEventListener('click', event => { event.preventDefault(); insert(emoji); });
+                fragment.appendChild(button);
+            });
+            grid.appendChild(fragment);
+            grid.scrollTop = 0;
+        };
+        EMOJI_TABS.forEach(([name, label]) => {
+            if (name !== 'recent' && !(data[name] || []).length) return;
+            const button = el('button', '', label);
+            button.type = 'button';
+            button.dataset.tab = name;
+            button.addEventListener('click', event => { event.preventDefault(); tab = name; render(); });
+            tabs.appendChild(button);
+        });
+        return {
+            // Returns whether the panel is open now.
+            toggle() {
+                container.hidden = !container.hidden;
+                if (!container.hidden) {
+                    input.blur();
+                    // The most used ones come first each time the panel opens.
+                    tab = 'recent';
+                    render();
+                }
+                return !container.hidden;
+            }
+        };
+    }
+
+    // An input of a dialog or a form with an emoji button beside it and the
+    // panel below; returns the element that takes the place of the input.
+    function withEmoji(input) {
+        const box = el('div', 'emoji-field');
+        const row = el('div', 'emoji-field-row');
+        const button = el('button', 'emoji-button');
+        button.type = 'button';
+        button.appendChild(icon('face-smile', 'medium'));
+        row.appendChild(input);
+        row.appendChild(button);
+        const panel = el('div');
+        box.appendChild(row);
+        box.appendChild(panel);
+        const emoji = emojiPanel(panel, input);
+        button.addEventListener('click', event => {
+            event.preventDefault();
+            button.classList.toggle('active', emoji.toggle());
+        });
+        return box;
     }
 
     // ------------------------------------------------------------- connection
@@ -4712,27 +4821,10 @@
         search.addEventListener('input', () => { state.participantFilter = search.value; renderParticipants(); });
         const input = $('chat-input');
         input.placeholder = t('chat.fieldPlaceHolder');
-        // The smileys panel of jitsi-meet (chat/smileys.ts): a tap puts the
-        // emoji where the cursor is; the panel stays open.
-        const SMILEYS = ['🙂', '🙁', '😄', '👍', '😛', '👋', '😊', '😂', '😲', '😘', '👎', '🔎', '❤️', '😳',
-            '😠', '😇', '🤒', '😢', '💣', '⏰', '😎', '😕', '😉', '🍺', '🍰', '🎉', '👏', '🙏', '🔥', '✅'];
-        const smileys = $('chat-smileys');
-        SMILEYS.forEach(emoji => {
-            const button = el('button', 'smiley', emoji);
-            button.type = 'button';
-            button.addEventListener('click', () => {
-                const start = input.selectionStart != null ? input.selectionStart : input.value.length;
-                const end = input.selectionEnd != null ? input.selectionEnd : start;
-                input.value = input.value.slice(0, start) + emoji + input.value.slice(end);
-                input.selectionStart = input.selectionEnd = start + emoji.length;
-                $('chat-send').disabled = !input.value.trim();
-            });
-            smileys.appendChild(button);
-        });
+        const chatEmoji = emojiPanel($('chat-smileys'), input, () => { $('chat-send').disabled = !input.value.trim(); });
         $('chat-smiley').addEventListener('click', () => {
-            smileys.hidden = !smileys.hidden;
-            $('chat-smiley').classList.toggle('active', !smileys.hidden);
-            if (!smileys.hidden) input.blur();
+            const open = chatEmoji.toggle();
+            $('chat-smiley').classList.toggle('active', open);
         });
         const chatSearch = $('chat-search');
         chatSearch.placeholder = t('speakerStats.search');
