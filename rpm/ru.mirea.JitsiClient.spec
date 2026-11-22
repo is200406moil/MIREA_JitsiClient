@@ -1,10 +1,14 @@
 Name:       ru.mirea.JitsiClient
 Summary:    Клиент видеоконференций Jitsi Meet для Авроры
 Version:    0.1
-Release:    163
+Release:    165
 License:    BSD-3-Clause
 URL:        https://auroraos.ru
 Source0:    %{name}-%{version}.tar.bz2
+
+# Aurora OS 5.2 build tools drop the whole changelog (_changelog_trimage -1),
+# while its validator requires one (no-changelogname-tag).
+%global _changelog_trimage 0
 
 # Aurora OS 5.1 has only the Gecko based Sailfish WebView, later versions the
 # Chromium based Aurora WebView. Taken from the build target, so the same
@@ -50,7 +54,12 @@ BuildRequires:  streamcamera-gstreamer-codec-plugin
 %autosetup
 
 %build
-%qmake5 VERSION=%{version} RELEASE=%{release} %{?gecko:CONFIG+=gecko}
+# gecko is always defined (0 or 1), so its value is checked, not its presence.
+%if 0%{?gecko}
+%qmake5 VERSION=%{version} RELEASE=%{release} CONFIG+=gecko
+%else
+%qmake5 VERSION=%{version} RELEASE=%{release}
+%endif
 %make_build
 
 %install
@@ -80,6 +89,12 @@ done
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
 
 %changelog
+* Sun Nov 22 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-165
+- Build the Chromium variant for Aurora OS 5.2 again (the Gecko one was built by mistake)
+- Remove a stale Chromium profile lock at start (a black meeting after a crash)
+- Show all project files in the IDE and parse the project on the Windows host
+- Keep the changelog in the Aurora OS 5.2 package
+
 * Wed Nov 18 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-163
 - Remove the explicit library dependency, the duplicate icons and the debug symbols from the package
 

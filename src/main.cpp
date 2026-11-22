@@ -54,6 +54,17 @@ int main(int argc, char *argv[])
         qputenv("GSTREAMER_CAMERA_DEVICE_PROVIDER", "aurorajitsiemulatorprovider");
     }
 #ifndef APP_GECKO_WEBVIEW
+    // Chromium locks its profile with SingletonLock -> <host>-<pid>. After a
+    // crash the lock stays, and in the firejail sandbox the next start often
+    // gets the same pid, so Chromium takes the profile for busy and opens no
+    // page (a black meeting). Only one instance of the application runs (it
+    // is started through D-Bus), so a lock found here is stale.
+    {
+        const QDir profile(QDir::homePath() + QStringLiteral("/.cache/ru.mirea/JitsiClient/webview"));
+        for (const QString &name : {QStringLiteral("SingletonLock"), QStringLiteral("SingletonCookie"),
+                                    QStringLiteral("SingletonSocket")})
+            QFile::remove(profile.filePath(name));
+    }
     Aurora::WebView::WebEngineContext::InitBrowser(argc, argv);
 #endif
 
