@@ -6,7 +6,7 @@ RPMS/
 *.rpm
 Makefile*
 moc_*.cpp
-*.pro.user
+*.pro.user*
 documentation.list
 /ru.mirea.JitsiClient
 /tests/jitsi-*
@@ -14,5 +14,4 @@ documentation.list
 *.moc
 tests/.build/
 tests/.build-ks/
-!packages/*.rpm
-!packages/aurora-5.1/*.rpm
+!packages/aurora-*/*.rpm

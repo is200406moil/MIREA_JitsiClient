@@ -57,7 +57,7 @@ Aurora OS 5.2 and Aurora OS 5.1.
 >
 > **❗ Some features (the camera, the microphone, the whiteboard, screen sharing, sounds and others) work through workarounds: application scripts adapt to Gecko 78 what the engine lacks (see below).**
 
-- **Aurora OS 5.2** uses the Chromium based Aurora WebView. Tested on the emulator 5.2.1.200 x86_64.
+- **Aurora OS 5.2** uses the Chromium based Aurora WebView. Tested on the emulator 5.2.1.200 x86_64: joining a meeting, the camera, the microphone (the emulator needs an audio input device). The 5.1 workarounds below are not used there.
 - **Aurora OS 5.1** has only the Gecko based Sailfish WebView (Gecko 78). The same code builds a separate package for it (`webview/gecko`). Tested on the emulator 5.1.1.60 x86_64 and on the KVADRA_T tablet (5.1.1.60 aarch64): joining a meeting, a meeting of two, the camera, the microphone, screen sharing (as a second video track beside the camera), reactions, the raised hand, the whiteboard. lib-jitsi-meet officially supports Firefox 91 and later, so on Gecko 78 the application works around what the engine lacks:
   - the camera is taken by the application (Qt camera) and given to the meeting page frame by frame, since the Gecko camera gives no frames on some devices; the picture size follows what the device manages to encode (up to the server's resolution) and stays upright when the device turns;
   - the microphone level is raised while someone speaks when the device gives a quiet signal;
@@ -68,7 +68,7 @@ Aurora OS 5.2 and Aurora OS 5.1.
 
   Known limitation: on meet.jit.si the Gecko 78 connection to the video bridge does not complete (no audio or video); other servers tested (meet.systemli.org, the OMP server) work.
 
-The packages for devices build and pass the validator, but they have not been run on a device yet.
+The packages for both OS versions pass the validator without errors or warnings (the emulator packages carry the bundled camera libraries the validator objects to). The Aurora OS 5.1 package runs on the KVADRA_T tablet; the Aurora OS 5.2 package has not been run on a device yet.
 
 ## Build
 
@@ -89,21 +89,16 @@ sfdk check RPMS/<package>.rpm
 
 ## Installation and launch
 
-Ready packages of the latest version are in [packages](packages):
+Ready packages of the latest version are in [packages](packages), one folder per OS version:
 
 | Package | For |
 |---|---|
-| `ru.mirea.JitsiClient-0.1-135.aarch64.rpm` | 64-bit devices |
-| `ru.mirea.JitsiClient-0.1-135.armv7hl.rpm` | 32-bit devices |
-| `ru.mirea.JitsiClient-0.1-135.x86_64.rpm` | Aurora OS emulator |
-
-These packages are for Aurora OS 5.2. Packages for Aurora OS 5.1 are in [packages/aurora-5.1](packages/aurora-5.1):
-
-| Package | For |
-|---|---|
-| `ru.mirea.JitsiClient-0.1-163.aarch64.rpm` | 64-bit devices with Aurora OS 5.1 |
-| `ru.mirea.JitsiClient-0.1-163.armv7hl.rpm` | 32-bit devices with Aurora OS 5.1 |
-| `ru.mirea.JitsiClient-0.1-163.x86_64.rpm` | Aurora OS 5.1 emulator |
+| [`aurora-5.2/ru.mirea.JitsiClient-0.1-165.aarch64.rpm`](packages/aurora-5.2) | Aurora OS 5.2, 64-bit devices |
+| [`aurora-5.2/ru.mirea.JitsiClient-0.1-165.armv7hl.rpm`](packages/aurora-5.2) | Aurora OS 5.2, 32-bit devices |
+| [`aurora-5.2/ru.mirea.JitsiClient-0.1-165.x86_64.rpm`](packages/aurora-5.2) | Aurora OS 5.2 emulator |
+| [`aurora-5.1/ru.mirea.JitsiClient-0.1-165.aarch64.rpm`](packages/aurora-5.1) | Aurora OS 5.1, 64-bit devices |
+| [`aurora-5.1/ru.mirea.JitsiClient-0.1-165.armv7hl.rpm`](packages/aurora-5.1) | Aurora OS 5.1, 32-bit devices |
+| [`aurora-5.1/ru.mirea.JitsiClient-0.1-165.x86_64.rpm`](packages/aurora-5.1) | Aurora OS 5.1 emulator |
 
 They are signed with the SDK development key, so they install on a device or emulator in developer mode.
 
