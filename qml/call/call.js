@@ -539,7 +539,18 @@
         if (!conference || !state.joined || typeof conference.setReceiverConstraints !== 'function') return;
         const constraints = {};
         let onStage = [];
-        if (!state.tileView) {
+        if (state.audioOnly) {
+            // lastN 0 alone is not enough: the bridge kept forwarding the
+            // source on the stage (720 lines, checked on meet.systemli.org),
+            // and over a direct (P2P) connection lib-jitsi-meet passes on the
+            // per-source maxHeight only. So nothing is put on the stage and
+            // every remote video source gets 0.
+            state.remotes.forEach(p => {
+                for (const track of [p.tracks.video, p.cameraTrack]) {
+                    if (track && typeof track.getSourceName === 'function') constraints[track.getSourceName()] = { maxHeight: 0 };
+                }
+            });
+        } else if (!state.tileView) {
             const staged = stageParticipant();
             const track = staged && !staged.local && staged.tracks.video;
             if (track && typeof track.getSourceName === 'function') {
@@ -552,7 +563,7 @@
         }
         const value = {
             lastN: state.audioOnly ? 0 : -1,
-            defaultConstraints: { maxHeight: state.tileView ? 360 : 180 },
+            defaultConstraints: { maxHeight: state.audioOnly ? 0 : state.tileView ? 360 : 180 },
             constraints,
             onStageSources: onStage
         };
