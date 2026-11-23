@@ -1,7 +1,7 @@
 Name:       ru.mirea.JitsiClient
 Summary:    Клиент видеоконференций Jitsi Meet для Авроры
 Version:    0.1
-Release:    165
+Release:    166
 License:    BSD-3-Clause
 URL:        https://auroraos.ru
 Source0:    %{name}-%{version}.tar.bz2
@@ -89,6 +89,9 @@ done
 %{_datadir}/icons/hicolor/*/apps/%{name}.png
 
 %changelog
+* Mon Nov 23 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-166
+- Stop the received video in the audio-only mode (the bridge kept sending the video on the stage)
+
 * Sun Nov 22 2026 Ghiyosidinov Ismoilkhuja <is200406moil@gmail.com> 0.1-165
 - Build the Chromium variant for Aurora OS 5.2 again (the Gecko one was built by mistake)
 - Remove a stale Chromium profile lock at start (a black meeting after a crash)

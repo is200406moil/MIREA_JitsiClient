@@ -93,12 +93,12 @@ sfdk check RPMS/<пакет>.rpm
 
 | Пакет | Для чего |
 |---|---|
-| [`aurora-5.2/ru.mirea.JitsiClient-0.1-165.aarch64.rpm`](packages/aurora-5.2) | ОС Аврора 5.2, устройства с 64-битным процессором |
-| [`aurora-5.2/ru.mirea.JitsiClient-0.1-165.armv7hl.rpm`](packages/aurora-5.2) | ОС Аврора 5.2, устройства с 32-битным процессором |
-| [`aurora-5.2/ru.mirea.JitsiClient-0.1-165.x86_64.rpm`](packages/aurora-5.2) | эмулятор ОС Аврора 5.2 |
-| [`aurora-5.1/ru.mirea.JitsiClient-0.1-165.aarch64.rpm`](packages/aurora-5.1) | ОС Аврора 5.1, устройства с 64-битным процессором |
-| [`aurora-5.1/ru.mirea.JitsiClient-0.1-165.armv7hl.rpm`](packages/aurora-5.1) | ОС Аврора 5.1, устройства с 32-битным процессором |
-| [`aurora-5.1/ru.mirea.JitsiClient-0.1-165.x86_64.rpm`](packages/aurora-5.1) | эмулятор ОС Аврора 5.1 |
+| [`aurora-5.2/ru.mirea.JitsiClient-0.1-166.aarch64.rpm`](packages/aurora-5.2/ru.mirea.JitsiClient-0.1-166.aarch64.rpm) | ОС Аврора 5.2, устройства с 64-битным процессором |
+| [`aurora-5.2/ru.mirea.JitsiClient-0.1-166.armv7hl.rpm`](packages/aurora-5.2/ru.mirea.JitsiClient-0.1-166.armv7hl.rpm) | ОС Аврора 5.2, устройства с 32-битным процессором |
+| [`aurora-5.2/ru.mirea.JitsiClient-0.1-166.x86_64.rpm`](packages/aurora-5.2/ru.mirea.JitsiClient-0.1-166.x86_64.rpm) | эмулятор ОС Аврора 5.2 |
+| [`aurora-5.1/ru.mirea.JitsiClient-0.1-166.aarch64.rpm`](packages/aurora-5.1/ru.mirea.JitsiClient-0.1-166.aarch64.rpm) | ОС Аврора 5.1, устройства с 64-битным процессором |
+| [`aurora-5.1/ru.mirea.JitsiClient-0.1-166.armv7hl.rpm`](packages/aurora-5.1/ru.mirea.JitsiClient-0.1-166.armv7hl.rpm) | ОС Аврора 5.1, устройства с 32-битным процессором |
+| [`aurora-5.1/ru.mirea.JitsiClient-0.1-166.x86_64.rpm`](packages/aurora-5.1/ru.mirea.JitsiClient-0.1-166.x86_64.rpm) | эмулятор ОС Аврора 5.1 |
 
 Пакеты подписаны ключом разработчика из SDK, поэтому устанавливаются на устройство или эмулятор в режиме разработчика.
 

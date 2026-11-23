@@ -93,12 +93,12 @@ Ready packages of the latest version are in [packages](packages), one folder per
 
 | Package | For |
 |---|---|
-| [`aurora-5.2/ru.mirea.JitsiClient-0.1-165.aarch64.rpm`](packages/aurora-5.2) | Aurora OS 5.2, 64-bit devices |
-| [`aurora-5.2/ru.mirea.JitsiClient-0.1-165.armv7hl.rpm`](packages/aurora-5.2) | Aurora OS 5.2, 32-bit devices |
-| [`aurora-5.2/ru.mirea.JitsiClient-0.1-165.x86_64.rpm`](packages/aurora-5.2) | Aurora OS 5.2 emulator |
-| [`aurora-5.1/ru.mirea.JitsiClient-0.1-165.aarch64.rpm`](packages/aurora-5.1) | Aurora OS 5.1, 64-bit devices |
-| [`aurora-5.1/ru.mirea.JitsiClient-0.1-165.armv7hl.rpm`](packages/aurora-5.1) | Aurora OS 5.1, 32-bit devices |
-| [`aurora-5.1/ru.mirea.JitsiClient-0.1-165.x86_64.rpm`](packages/aurora-5.1) | Aurora OS 5.1 emulator |
+| [`aurora-5.2/ru.mirea.JitsiClient-0.1-166.aarch64.rpm`](packages/aurora-5.2/ru.mirea.JitsiClient-0.1-166.aarch64.rpm) | Aurora OS 5.2, 64-bit devices |
+| [`aurora-5.2/ru.mirea.JitsiClient-0.1-166.armv7hl.rpm`](packages/aurora-5.2/ru.mirea.JitsiClient-0.1-166.armv7hl.rpm) | Aurora OS 5.2, 32-bit devices |
+| [`aurora-5.2/ru.mirea.JitsiClient-0.1-166.x86_64.rpm`](packages/aurora-5.2/ru.mirea.JitsiClient-0.1-166.x86_64.rpm) | Aurora OS 5.2 emulator |
+| [`aurora-5.1/ru.mirea.JitsiClient-0.1-166.aarch64.rpm`](packages/aurora-5.1/ru.mirea.JitsiClient-0.1-166.aarch64.rpm) | Aurora OS 5.1, 64-bit devices |
+| [`aurora-5.1/ru.mirea.JitsiClient-0.1-166.armv7hl.rpm`](packages/aurora-5.1/ru.mirea.JitsiClient-0.1-166.armv7hl.rpm) | Aurora OS 5.1, 32-bit devices |
+| [`aurora-5.1/ru.mirea.JitsiClient-0.1-166.x86_64.rpm`](packages/aurora-5.1/ru.mirea.JitsiClient-0.1-166.x86_64.rpm) | Aurora OS 5.1 emulator |
 
 They are signed with the SDK development key, so they install on a device or emulator in developer mode.
 
