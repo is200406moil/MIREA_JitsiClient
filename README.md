@@ -6,7 +6,7 @@ MIREA — Russian Technological University (MIREA)
 
 A Jitsi Meet video conferencing client for smartphones running Aurora OS 5. The interface follows the Jitsi mobile client, and its strings come from Jitsi's language files.
 
-**Purpose.** A final qualifying work: a working Aurora OS client that is compatible with Jitsi Meet servers and close to the Android and iOS clients in behaviour.
+**Purpose.** A working Aurora OS client that is compatible with Jitsi Meet servers and close to the Android and iOS clients in behaviour.
 
 **Features.** Joining rooms by name or link, meeting history, camera and microphone, chat, polls, reactions, moderation, live streaming to YouTube, sign-in to protected servers, work in the background.
 
